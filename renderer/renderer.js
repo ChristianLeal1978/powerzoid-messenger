@@ -77,6 +77,11 @@ window.api.onChatsError(({ attempt }) => {
   chatListStatus.classList.remove('hidden');
 });
 
+window.api.onChatsSyncing(({ attempt }) => {
+  chatListStatus.textContent = `Sincronizando chats desde tu teléfono… (intento ${attempt})`;
+  chatListStatus.classList.remove('hidden');
+});
+
 function renderChatList() {
   chatListEl.innerHTML = '';
   chats.forEach((c) => {

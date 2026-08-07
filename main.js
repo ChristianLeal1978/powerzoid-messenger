@@ -145,6 +145,7 @@ async function serializeMessage(msg) {
 }
 
 let chatListRetries = 0;
+let emptyListRetries = 0;
 
 async function pushChatList() {
   try {
@@ -164,6 +165,17 @@ async function pushChatList() {
           avatar: await getAvatar(c.id._serialized),
         }))
     );
+    if (!list.length && emptyListRetries < 8) {
+      // Justo después de vincular un dispositivo nuevo, el cliente puede
+      // quedar "ready" antes de que WhatsApp termine de sincronizar el
+      // historial de chats — getChats() devuelve [] sin error. Reintentamos
+      // antes de asumir que la cuenta realmente no tiene chats.
+      emptyListRetries += 1;
+      send('wa:chats-syncing', { attempt: emptyListRetries });
+      setTimeout(pushChatList, Math.min(4000 * emptyListRetries, 20000));
+      return;
+    }
+    emptyListRetries = 0;
     send('wa:chats', list);
   } catch (err) {
     // client.getChats() está afectado por un bug conocido, en curso, de
