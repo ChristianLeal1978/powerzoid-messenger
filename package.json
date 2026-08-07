@@ -1,0 +1,18 @@
+{
+  "name": "whatsapp-sidebar",
+  "version": "0.1.0",
+  "description": "Barra lateral vertical de WhatsApp para Linux (Electron + whatsapp-web.js)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "qrcode": "^1.5.3",
+    "whatsapp-web.js": "^1.26.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

@@ -1,0 +1,128 @@
+# WhatsApp Sidebar
+
+Barra lateral vertical de WhatsApp para Linux, pensada para vivir anclada en el
+borde izquierdo del escritorio: una sola columna, con la lista de chats arriba
+y la conversación seleccionada abajo, en la misma columna.
+
+Es un proyecto inicial funcional, no un producto terminado — pensado para que
+lo probemos y lo ajustemos juntos.
+
+## Cómo funciona
+
+- **Electron** crea la ventana sin bordes, angosta (340px por defecto), pegada
+  a `x=0, y=0` y con el alto de la pantalla.
+- **whatsapp-web.js** controla una sesión real de WhatsApp Web en segundo
+  plano (usa su propio Chromium vía Puppeteer) y expone chats/mensajes como
+  eventos, que el proceso principal reenvía al renderer por IPC.
+- El renderer es HTML/CSS/JS plano: no hay build step.
+
+## Instalación (Fedora)
+
+```bash
+cd whatsapp-sidebar
+npm install
+npm start
+```
+
+La primera vez se abrirá con un código QR — escanéalo desde tu teléfono en
+**WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo**.
+La sesión queda guardada localmente (`~/.config/whatsapp-sidebar/wwebjs_auth`),
+así que no tendrás que volver a escanear en cada inicio.
+
+> `whatsapp-web.js` descarga Chromium al hacer `npm install` (puede tardar
+> unos minutos la primera vez).
+
+## Problema conocido (agosto 2026): `r: r` al cargar chats o mensajes
+
+Si al escanear el QR la app queda pegada, sin lista de chats, o el mensaje de
+estado dice "No se pudo cargar la lista de chats": **no es un bug de este
+proyecto**. Es un bug real, abierto y activo en `whatsapp-web.js` mismo,
+provocado por un cambio que WhatsApp Web hizo en julio de 2026 (dejaron de
+usar Webpack y renombraron cómo se serializan los IDs internos). Rompe
+`Client.getChats()`, `Client.getChatById()` y `Message.downloadMedia()` para
+prácticamente todo el mundo que usa la librería ahora mismo, no solo acá.
+
+Reportes relevantes en el repo oficial (`wwebjs/whatsapp-web.js`):
+- [#201845](https://github.com/wwebjs/whatsapp-web.js/issues/201845) — `getChats()`/`getState()` lanzan `r: r`.
+- [#201838](https://github.com/wwebjs/whatsapp-web.js/issues/201838) — mismo error en `getChatById()`.
+- [#201833](https://github.com/wwebjs/whatsapp-web.js/issues/201833) — mismo error al descargar medios.
+- [#201832](https://github.com/wwebjs/whatsapp-web.js/pull/201832) — parche temporal de la comunidad (no oficial todavía).
+
+Ya apliqué en el código el único workaround real de nuestro lado: dejé de
+llamar a `msg.getChat()` en cada mensaje entrante (esa llamada también
+dispara el bug) y derivo el chat directamente de los datos que ya trae el
+mensaje. Eso hace que **recibir mensajes en tiempo real debería funcionar**.
+Lo que sigue roto, porque no tiene workaround posible desde afuera de la
+librería, es `getChats()` — la carga inicial de la lista de conversaciones —
+y `getChatById()` al abrir el historial de una conversación. La app ahora
+reintenta solo y te avisa en pantalla en vez de quedarse muda, pero mientras
+el bug siga abierto, esas dos cosas seguirán fallando.
+
+**Qué puedes hacer:**
+
+1. **Esperar y reintentar.** Es un bug "high impact" reportado hace unas
+   semanas y muy visible (afecta a cualquiera que use la librería), así que
+   es razonable esperar una versión parcheada pronto. Revisa
+   [github.com/wwebjs/whatsapp-web.js/releases](https://github.com/wwebjs/whatsapp-web.js/releases)
+   de vez en cuando y corre `npm update whatsapp-web.js`.
+2. **Probar el parche comunitario no oficial**, a tu propio riesgo — quien lo
+   reportó también encontró un problema nuevo con él (mensajes de grupo que
+   no descifran bien en el teléfono principal), así que pruébalo primero con
+   un chat que no te importe:
+   ```bash
+   npm install github:wwebjs/whatsapp-web.js#f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761
+   ```
+3. Si nada de esto funciona todavía cuando lo pruebes, cuéntame qué mensaje
+   de error te tira exactamente y seguimos ajustando — puede que para
+   entonces ya haya más información sobre el estado del arreglo.
+
+## Sobre el anclaje al borde (importante)
+
+Fedora Workstation trae **GNOME sobre Wayland** por defecto. Bajo Wayland
+nativo, ninguna aplicación puede fijar su propia posición en pantalla — eso lo
+decide el compositor, por diseño y por seguridad. Electron, sin embargo, se
+ejecuta por defecto vía **XWayland**, y ahí sí funciona `x/y` como cualquier
+ventana X11 normal, que es lo que usa este proyecto. En la práctica, para la
+mayoría debería posicionarse correctamente sin hacer nada más.
+
+Si notas que la ventana no queda pegada al borde:
+
+- Prueba forzar XWayland explícitamente: `npm start -- --ozone-platform=x11`.
+- O inicia sesión en **GNOME on Xorg** (selector de sesión en la pantalla de
+  login) — ahí el posicionamiento es 100% confiable.
+
+**Una limitación real:** esta primera versión deja la ventana *encima* de
+otras (`alwaysOnTop`), pero no reserva el espacio como lo hace un panel/dock
+real (para que otras ventanas no se superpongan). Eso requiere hablarle a las
+hints `_NET_WM_STRUT_PARTIAL` de X11, que Electron no expone de forma nativa.
+Es un paso 2 razonable si te sirve el resultado de esta primera versión: se
+puede resolver con un pequeño binario auxiliar en C o con `xdotool`/`wmctrl`
+después de crear la ventana.
+
+## Iniciar automáticamente al iniciar sesión
+
+Crea `~/.config/autostart/whatsapp-sidebar.desktop`:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=WhatsApp Sidebar
+Exec=/ruta/absoluta/a/whatsapp-sidebar/node_modules/.bin/electron /ruta/absoluta/a/whatsapp-sidebar
+X-GNOME-Autostart-enabled=true
+```
+
+## Personalizar
+
+- **Ancho de la ventana:** constante `WINDOW_WIDTH` en `main.js`.
+- **Colores/tipografía:** variables al inicio de `renderer/styles.css`.
+- **Proporción lista de chats / conversación:** clases `.chat-list` (`flex`)
+  y `.conversation` (`flex`) en `styles.css` — hoy es 42% / 58%.
+- **Cantidad de chats mostrados / mensajes cargados:** `pushChatList` y
+  `wa:getMessages` en `main.js`.
+
+## Próximos pasos posibles
+
+- Reservar espacio en pantalla como un panel real (ver nota de Wayland/X11).
+- Notificaciones de escritorio nativas al llegar un mensaje.
+- Envío/recepción de imágenes y notas de voz (hoy solo texto).
+- Atajo de teclado global para mostrar/ocultar la barra.
