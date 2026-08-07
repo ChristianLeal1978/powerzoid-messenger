@@ -86,9 +86,12 @@ async function getAvatar(id) {
     const url = await client.getProfilePicUrl(id);
     if (url) dataUri = await fetchAsDataUri(url);
   } catch (err) {
-    // Sin foto de perfil (o privacidad la bloquea); la UI cae a iniciales.
+    // Sin foto de perfil (o privacidad la bloquea) — pero también puede ser
+    // el mismo bug intermitente de whatsapp-web.js. No cacheamos el fallo:
+    // si lo hiciéramos, un error transitorio dejaría esa foto en blanco
+    // para el resto de la sesión aunque el siguiente intento sí funcione.
   }
-  avatarCache.set(id, dataUri);
+  if (dataUri) avatarCache.set(id, dataUri);
   return dataUri;
 }
 
@@ -121,6 +124,26 @@ async function getReactionsSummary(msg) {
   }
 }
 
+async function resolveMentionsInBody(msg) {
+  // WhatsApp deja las menciones en el texto como "@<número>" (el nombre
+  // solo vive en mentionedIds); si no las resolvemos acá, la UI muestra el
+  // número pelado en vez de "@Nombre".
+  if (!msg.mentionedIds || !msg.mentionedIds.length) return msg.body;
+  let body = msg.body || '';
+  const ids = msg.mentionedIds.map((m) => (typeof m === 'string' ? m : m._serialized));
+  // Reemplazamos del número más largo al más corto: si un número mencionado
+  // es prefijo de otro, resolver el corto primero corrompería la ocurrencia
+  // del largo.
+  const withNumbers = await Promise.all(
+    ids.map(async (id) => ({ number: id.split('@')[0], name: await getContactName(id) }))
+  );
+  withNumbers.sort((a, b) => b.number.length - a.number.length);
+  for (const { number, name } of withNumbers) {
+    body = body.split(`@${number}`).join(`@${name}`);
+  }
+  return body;
+}
+
 async function serializeMessage(msg) {
   // OJO: evitamos msg.getChat() a propósito. Internamente hace otra consulta
   // al Store (client.getChatById) que hoy está rota en whatsapp-web.js (ver
@@ -130,7 +153,7 @@ async function serializeMessage(msg) {
     id: msg.id._serialized,
     chatId: msg.fromMe ? msg.to : msg.from,
     fromMe: msg.fromMe,
-    body: msg.body,
+    body: await resolveMentionsInBody(msg),
     timestamp: msg.timestamp,
     author: msg.author || null,
     // OJO: `author` viene poblado en mensajes de grupo tanto míos como
