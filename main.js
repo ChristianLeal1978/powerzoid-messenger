@@ -31,9 +31,6 @@ function createWindow() {
     },
   });
 
-  // Intenta mantenerse visible en todos los escritorios/espacios de trabajo.
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
@@ -64,7 +61,7 @@ async function pushChatList() {
   try {
     const chats = await client.getChats();
     chatListRetries = 0;
-    const list = chats.slice(0, 60).map((c) => ({
+    const list = chats.filter((c) => !c.archived).slice(0, 60).map((c) => ({
       id: c.id._serialized,
       name: c.name || c.id.user,
       isGroup: c.isGroup,

@@ -140,8 +140,11 @@ Actividades de GNOME. Esto ya se hizo en esta máquina.
 
 - **Ancho de la ventana:** constante `WINDOW_WIDTH` en `main.js`.
 - **Colores/tipografía:** variables al inicio de `renderer/styles.css`.
-- **Proporción lista de chats / conversación:** clases `.chat-list` (`flex`)
-  y `.conversation` (`flex`) en `styles.css` — hoy es 42% / 58%.
+- **Proporción lista de chats / conversación:** ahora se ajusta arrastrando
+  el divisor entre ambas zonas (línea entre la lista y la conversación); la
+  altura elegida queda guardada en `localStorage` del propio proceso de la
+  app. El valor por defecto (42% / 58%, en `.chat-list`/`.conversation` de
+  `styles.css`) sigue aplicando hasta la primera vez que se arrastra.
 - **Cantidad de chats mostrados / mensajes cargados:** `pushChatList` y
   `wa:getMessages` en `main.js`.
 

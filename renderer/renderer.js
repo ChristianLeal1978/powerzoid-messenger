@@ -13,6 +13,7 @@ const messagesEl = document.getElementById('messages');
 const composer = document.getElementById('composer');
 const composerInput = document.getElementById('composer-input');
 const backBtn = document.getElementById('back-btn');
+const divider = document.getElementById('divider');
 
 let chats = [];
 let selectedChatId = null;
@@ -100,6 +101,15 @@ async function openChat(chatId, name) {
   }
   res.messages.forEach(renderMessage);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  // El proceso principal ya marcó el chat como leído (chat.sendSeen()) al
+  // pedir los mensajes; reflejamos eso de inmediato en la lista en vez de
+  // esperar al próximo pushChatList() (que solo llega con mensajes nuevos).
+  const openedChat = chats.find((c) => c.id === chatId);
+  if (openedChat && openedChat.unreadCount) {
+    openedChat.unreadCount = 0;
+    renderChatList();
+  }
 }
 
 function renderMessage(msg) {
@@ -132,6 +142,46 @@ composer.addEventListener('submit', async (e) => {
   if (!res.ok) {
     composerInput.value = text; // no perdemos lo escrito si falló el envío
   }
+});
+
+// --- Ajuste del alto de la lista de chats (arrastrando el divisor) ---
+const SPLIT_STORAGE_KEY = 'whatsapp-sidebar:chatListHeight';
+const MIN_CHAT_LIST_HEIGHT = 90;
+const MIN_CONVERSATION_HEIGHT = 160;
+
+function applySavedSplit() {
+  const saved = Number(localStorage.getItem(SPLIT_STORAGE_KEY));
+  if (saved && Number.isFinite(saved)) {
+    chatListEl.style.flex = 'none';
+    chatListEl.style.height = `${saved}px`;
+  }
+}
+applySavedSplit();
+
+let dragging = false;
+
+divider.addEventListener('mousedown', (e) => {
+  dragging = true;
+  divider.classList.add('dragging');
+  document.body.style.cursor = 'row-resize';
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  const listTop = chatListEl.getBoundingClientRect().top;
+  const maxHeight = window.innerHeight - listTop - MIN_CONVERSATION_HEIGHT;
+  const newHeight = Math.max(MIN_CHAT_LIST_HEIGHT, Math.min(maxHeight, e.clientY - listTop));
+  chatListEl.style.flex = 'none';
+  chatListEl.style.height = `${newHeight}px`;
+});
+
+window.addEventListener('mouseup', () => {
+  if (!dragging) return;
+  dragging = false;
+  divider.classList.remove('dragging');
+  document.body.style.cursor = '';
+  localStorage.setItem(SPLIT_STORAGE_KEY, parseInt(chatListEl.style.height, 10));
 });
 
 function escapeHtml(str) {
