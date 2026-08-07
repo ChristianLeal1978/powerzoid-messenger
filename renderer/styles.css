@@ -163,6 +163,10 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   font-size: 10px;
   color: var(--text-dim);
 }
+.reaction-alert {
+  font-size: 13px;
+  line-height: 1;
+}
 .badge {
   min-width: 16px; height: 16px;
   padding: 0 4px;

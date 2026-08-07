@@ -23,6 +23,7 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 let chats = [];
 let selectedChatId = null;
 const messageElements = new Map(); // msgId -> .bubble-wrap, para reacciones en vivo
+const chatReactionAlerts = new Map(); // chatId -> emoji, para avisar en la lista
 let openReactionBarWrap = null;
 let currentChatIsGroup = false;
 let groupParticipants = [];
@@ -90,6 +91,7 @@ function renderChatList() {
       </div>
       <div class="chat-side">
         <span class="chat-time">${formatTime(c.timestamp)}</span>
+        ${chatReactionAlerts.has(c.id) ? `<span class="reaction-alert">${chatReactionAlerts.get(c.id)}</span>` : ''}
         ${c.unreadCount ? `<span class="badge">${c.unreadCount}</span>` : ''}
       </div>
     `;
@@ -101,6 +103,7 @@ function renderChatList() {
 // --- Conversación activa ---
 async function openChat(chatId, name) {
   selectedChatId = chatId;
+  chatReactionAlerts.delete(chatId);
   pendingMentions = new Map();
   hideMentionList();
   emojiPickerEl.classList.add('hidden');
@@ -213,11 +216,18 @@ document.addEventListener('click', (e) => {
   }
 });
 
-window.api.onReactionUpdate(({ messageId, reactions }) => {
+window.api.onReactionUpdate(({ messageId, chatId, reactions, emoji }) => {
   const wrap = messageElements.get(messageId);
-  if (!wrap) return;
-  const el = wrap.querySelector('.reactions');
-  if (el) renderReactions(el, reactions);
+  if (wrap) {
+    const el = wrap.querySelector('.reactions');
+    if (el) renderReactions(el, reactions);
+  }
+  // Si la reacción es de un chat que no tengo abierto, la aviso en la lista
+  // en vez de dejarla pasar en silencio (solo mensajes nuevos bumpean hoy).
+  if (emoji && chatId && chatId !== selectedChatId) {
+    chatReactionAlerts.set(chatId, emoji);
+    renderChatList();
+  }
 });
 
 window.api.onIncoming((msg) => {

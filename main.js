@@ -219,7 +219,14 @@ function createClient() {
     if (!messageId) return;
     try {
       const msg = await client.getMessageById(messageId);
-      send('wa:reactionUpdate', { messageId, reactions: await getReactionsSummary(msg) });
+      send('wa:reactionUpdate', {
+        messageId,
+        chatId: msg.fromMe ? msg.to : msg.from,
+        reactions: await getReactionsSummary(msg),
+        // reaction.reaction viene vacío cuando se retira una reacción; en
+        // ese caso no hay nada nuevo que avisar en la lista de chats.
+        emoji: reaction.reaction || null,
+      });
     } catch (err) {
       console.error('[wa] no se pudo refrescar reacciones:', err.message || err);
     }
