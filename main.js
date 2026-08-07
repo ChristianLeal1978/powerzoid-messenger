@@ -79,19 +79,33 @@ function fetchAsDataUri(url) {
   });
 }
 
+// pushChatList() corre en cada mensaje entrante/saliente. Si no cacheáramos
+// nunca los fallos (como se hizo en un intento anterior), un chat cuya foto
+// falla se reintenta con un round-trip a Puppeteer + descarga HTTPS en
+// *cada* mensaje del chat — eso fue lo que causó el pico de CPU/memoria que
+// se sentía como lag al escribir y cortes de audio. Este cooldown deja que
+// un fallo transitorio se recupere solo, sin martillar en cada mensaje.
+const AVATAR_RETRY_COOLDOWN_MS = 5 * 60 * 1000;
+const avatarFailedAt = new Map();
+
 async function getAvatar(id) {
   if (avatarCache.has(id)) return avatarCache.get(id);
+  const lastFail = avatarFailedAt.get(id);
+  if (lastFail && Date.now() - lastFail < AVATAR_RETRY_COOLDOWN_MS) return null;
   let dataUri = null;
   try {
     const url = await client.getProfilePicUrl(id);
     if (url) dataUri = await fetchAsDataUri(url);
   } catch (err) {
-    // Sin foto de perfil (o privacidad la bloquea) — pero también puede ser
-    // el mismo bug intermitente de whatsapp-web.js. No cacheamos el fallo:
-    // si lo hiciéramos, un error transitorio dejaría esa foto en blanco
-    // para el resto de la sesión aunque el siguiente intento sí funcione.
+    // Sin foto de perfil (o privacidad la bloquea), o el bug intermitente
+    // de whatsapp-web.js — cualquiera de los dos cae al mismo cooldown.
   }
-  if (dataUri) avatarCache.set(id, dataUri);
+  if (dataUri) {
+    avatarCache.set(id, dataUri);
+    avatarFailedAt.delete(id);
+  } else {
+    avatarFailedAt.set(id, Date.now());
+  }
   return dataUri;
 }
 
