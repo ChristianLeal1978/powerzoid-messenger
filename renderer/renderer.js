@@ -18,8 +18,12 @@ const mentionListEl = document.getElementById('mention-list');
 const emojiPickerEl = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
 
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
 let chats = [];
 let selectedChatId = null;
+const messageElements = new Map(); // msgId -> .bubble-wrap, para reacciones en vivo
+let openReactionBarWrap = null;
 let currentChatIsGroup = false;
 let groupParticipants = [];
 let pendingMentions = new Map(); // id -> nombre, para el envío
@@ -105,6 +109,9 @@ async function openChat(chatId, name) {
   convActive.classList.remove('hidden');
   convName.textContent = name;
   messagesEl.innerHTML = '<div class="status-text">Cargando…</div>';
+  messageElements.clear();
+  openReactionBarWrap = null;
+  autoResizeComposer();
 
   const chatMeta = chats.find((c) => c.id === chatId);
   currentChatIsGroup = !!(chatMeta && chatMeta.isGroup);
@@ -135,14 +142,83 @@ async function openChat(chatId, name) {
 }
 
 function renderMessage(msg) {
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble-wrap' + (msg.fromMe ? ' mine' : '');
+
   const b = document.createElement('div');
-  b.className = 'bubble' + (msg.fromMe ? ' mine' : '');
+  b.className = 'bubble' + (msg.fromMe ? ' mine' : '') + (msg.sticker ? ' sticker-bubble' : '');
   // authorName solo viene poblado para mensajes de grupo que no son míos
   // (ver serializeMessage() en main.js) — así identificamos quién escribió qué.
   const authorHtml = msg.authorName ? `<span class="author">${escapeHtml(msg.authorName)}</span>` : '';
-  b.innerHTML = `${authorHtml}${escapeHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''))}<span class="t">${formatTime(msg.timestamp)}</span>`;
-  messagesEl.appendChild(b);
+  const bodyHtml = msg.sticker
+    ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
+    : escapeHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
+  b.innerHTML = `${authorHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
+  b.addEventListener('click', () => toggleReactionBar(wrap, msg.id));
+  wrap.appendChild(b);
+
+  const reactionsEl = document.createElement('div');
+  reactionsEl.className = 'reactions';
+  renderReactions(reactionsEl, msg.reactions || []);
+  wrap.appendChild(reactionsEl);
+
+  messagesEl.appendChild(wrap);
+  messageElements.set(msg.id, wrap);
 }
+
+// --- Reacciones ---
+function renderReactions(el, reactions) {
+  el.innerHTML = '';
+  reactions.forEach((r) => {
+    const pill = document.createElement('span');
+    pill.className = 'reaction-pill' + (r.byMe ? ' mine' : '');
+    pill.textContent = r.count > 1 ? `${r.emoji} ${r.count}` : r.emoji;
+    el.appendChild(pill);
+  });
+}
+
+function closeReactionBar() {
+  if (!openReactionBarWrap) return;
+  const bar = openReactionBarWrap.querySelector('.reaction-bar');
+  if (bar) bar.remove();
+  openReactionBarWrap = null;
+}
+
+function toggleReactionBar(wrap, msgId) {
+  if (openReactionBarWrap === wrap) {
+    closeReactionBar();
+    return;
+  }
+  closeReactionBar();
+  const bar = document.createElement('div');
+  bar.className = 'reaction-bar';
+  QUICK_REACTIONS.forEach((emoji) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = emoji;
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      closeReactionBar();
+      await window.api.reactToMessage(msgId, emoji);
+    });
+    bar.appendChild(btn);
+  });
+  wrap.appendChild(bar);
+  openReactionBarWrap = wrap;
+}
+
+document.addEventListener('click', (e) => {
+  if (openReactionBarWrap && !openReactionBarWrap.contains(e.target)) {
+    closeReactionBar();
+  }
+});
+
+window.api.onReactionUpdate(({ messageId, reactions }) => {
+  const wrap = messageElements.get(messageId);
+  if (!wrap) return;
+  const el = wrap.querySelector('.reactions');
+  if (el) renderReactions(el, reactions);
+});
 
 window.api.onIncoming((msg) => {
   if (msg.chatId === selectedChatId) {
@@ -181,7 +257,10 @@ function autoResizeComposer() {
   composerInput.style.height = 'auto';
   composerInput.style.height = `${Math.min(composerInput.scrollHeight, 120)}px`;
 }
-autoResizeComposer();
+// OJO: no se llama acá al arrancar. #conv-active empieza oculto
+// (display:none), así que scrollHeight lee 0 y deja el textarea con
+// altura 0 hasta el próximo evento 'input'. Se recalcula en openChat(),
+// una vez que la conversación ya es visible y el layout es real.
 
 composerInput.addEventListener('input', () => {
   autoResizeComposer();

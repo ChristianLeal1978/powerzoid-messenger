@@ -27,7 +27,9 @@ html, body {
   -webkit-app-region: drag;
 }
 
-button, input, .composer, .chat-row, .messages, .divider { -webkit-app-region: no-drag; }
+button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-list, .emoji-picker {
+  -webkit-app-region: no-drag;
+}
 
 /* Riel de estado: vive justo en el borde físico de la pantalla */
 .rail {
@@ -230,20 +232,26 @@ button, input, .composer, .chat-row, .messages, .divider { -webkit-app-region: n
   padding: 10px 12px;
   display: flex; flex-direction: column; gap: 6px;
 }
-.bubble {
+.bubble-wrap {
+  display: flex;
+  flex-direction: column;
   max-width: 88%;
+  align-self: flex-start;
+}
+.bubble-wrap.mine { align-self: flex-end; align-items: flex-end; }
+
+.bubble {
   padding: 6px 10px;
   border-radius: 10px;
   font-size: 12.5px;
   line-height: 1.4;
   word-wrap: break-word;
   background: var(--bg-elevated);
-  align-self: flex-start;
+  cursor: pointer;
 }
-.bubble.mine {
-  background: var(--accent-soft);
-  align-self: flex-end;
-}
+.bubble.mine { background: var(--accent-soft); }
+.bubble.sticker-bubble { background: none; padding: 0; cursor: pointer; }
+.sticker { display: block; width: 104px; height: 104px; object-fit: contain; }
 .bubble .t {
   display: block;
   margin-top: 3px;
@@ -258,6 +266,43 @@ button, input, .composer, .chat-row, .messages, .divider { -webkit-app-region: n
   color: var(--accent);
   margin-bottom: 2px;
 }
+
+/* --- Reacciones --- */
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+  min-height: 0;
+}
+.reaction-pill {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.reaction-pill.mine { border-color: var(--accent); }
+.reaction-bar {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+.reaction-bar button {
+  background: none;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.reaction-bar button:hover { background: var(--bg-hover); }
 
 .composer {
   flex: 0 0 auto;

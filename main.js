@@ -92,6 +92,35 @@ async function getAvatar(id) {
   return dataUri;
 }
 
+// whatsapp-web.js normaliza msg.id vía Base._normalizeId, pero los ids que
+// vienen sueltos en eventos como message_reaction (reaction.msgId) no pasan
+// por ahí — replicamos el mismo fallback _serialized/$1 (ver nota sobre el
+// cambio de WhatsApp Web de julio 2026 más arriba).
+function normalizeId(id) {
+  if (!id) return null;
+  return id._serialized || id.$1 || null;
+}
+
+async function getStickerDataUri(msg) {
+  if (msg.type !== 'sticker' || !msg.hasMedia) return null;
+  try {
+    const media = await msg.downloadMedia();
+    return media ? `data:${media.mimetype};base64,${media.data}` : null;
+  } catch (err) {
+    return null; // la UI cae al placeholder de "Adjunto"
+  }
+}
+
+async function getReactionsSummary(msg) {
+  if (!msg.hasReaction) return [];
+  try {
+    const list = await msg.getReactions();
+    return (list || []).map((r) => ({ emoji: r.id, count: r.senders.length, byMe: r.hasReactionByMe }));
+  } catch (err) {
+    return [];
+  }
+}
+
 async function serializeMessage(msg) {
   // OJO: evitamos msg.getChat() a propósito. Internamente hace otra consulta
   // al Store (client.getChatById) que hoy está rota en whatsapp-web.js (ver
@@ -110,6 +139,8 @@ async function serializeMessage(msg) {
     authorName: msg.author && !msg.fromMe ? await getContactName(msg.author) : null,
     hasMedia: msg.hasMedia,
     type: msg.type,
+    sticker: await getStickerDataUri(msg),
+    reactions: await getReactionsSummary(msg),
   };
 }
 
@@ -183,6 +214,17 @@ function createClient() {
     }
   });
 
+  client.on('message_reaction', async (reaction) => {
+    const messageId = normalizeId(reaction.msgId);
+    if (!messageId) return;
+    try {
+      const msg = await client.getMessageById(messageId);
+      send('wa:reactionUpdate', { messageId, reactions: await getReactionsSummary(msg) });
+    } catch (err) {
+      console.error('[wa] no se pudo refrescar reacciones:', err.message || err);
+    }
+  });
+
   client.initialize();
 }
 
@@ -204,6 +246,16 @@ ipcMain.handle('wa:sendMessage', async (_e, { chatId, text, mentions }) => {
     return { ok: true };
   } catch (err) {
     console.error('[wa] sendMessage() falló:', err.message || err);
+    return { ok: false };
+  }
+});
+
+ipcMain.handle('wa:reactToMessage', async (_e, { messageId, emoji }) => {
+  try {
+    await client.sendReaction(messageId, emoji);
+    return { ok: true };
+  } catch (err) {
+    console.error('[wa] reactToMessage() falló:', err.message || err);
     return { ok: false };
   }
 });
