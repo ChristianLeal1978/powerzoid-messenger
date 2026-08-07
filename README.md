@@ -111,6 +111,40 @@ Exec=/ruta/absoluta/a/whatsapp-sidebar/node_modules/.bin/electron /ruta/absoluta
 X-GNOME-Autostart-enabled=true
 ```
 
+## Acceso desde el lanzador de aplicaciones (GNOME)
+
+El proyecto trae un ícono propio en `assets/icon.svg` (y variantes `.png` ya
+generadas en varios tamaños). Para que aparezca junto al resto de tus apps:
+
+```bash
+# 1. Instalar el ícono en el tema de iconos del usuario
+for size in 16 32 48 64 128 256 512; do
+  mkdir -p ~/.local/share/icons/hicolor/${size}x${size}/apps
+  cp assets/icon-${size}.png ~/.local/share/icons/hicolor/${size}x${size}/apps/whatsapp-sidebar.png
+done
+mkdir -p ~/.local/share/icons/hicolor/scalable/apps
+cp assets/icon.svg ~/.local/share/icons/hicolor/scalable/apps/whatsapp-sidebar.svg
+gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
+
+# 2. Crear el lanzador (ajusta la ruta absoluta si tu checkout está en otro lugar)
+cat > ~/.local/share/applications/whatsapp-sidebar.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=WhatsApp Sidebar
+Comment=Barra lateral vertical de WhatsApp para Linux
+Exec=/ruta/absoluta/a/whatsapp-sidebar/node_modules/.bin/electron /ruta/absoluta/a/whatsapp-sidebar
+Icon=whatsapp-sidebar
+Terminal=false
+Categories=Network;Chat;InstantMessaging;
+StartupWMClass=whatsapp-sidebar
+EOF
+
+update-desktop-database ~/.local/share/applications
+```
+
+Después de esto debería aparecer como "WhatsApp Sidebar" al buscar en
+Actividades de GNOME. Esto ya se hizo en esta máquina.
+
 ## Personalizar
 
 - **Ancho de la ventana:** constante `WINDOW_WIDTH` en `main.js`.

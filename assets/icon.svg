@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <clipPath id="bgClip">
+      <rect x="0" y="0" width="256" height="256" rx="52" ry="52"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#bgClip)">
+    <rect x="0" y="0" width="256" height="256" fill="#12181b"/>
+
+    <!-- riel de estado, igual que .rail en la app real -->
+    <rect x="0" y="0" width="16" height="256" fill="#5fbe96"/>
+
+    <!-- filas de la lista de chats -->
+    <g transform="translate(46,0)">
+      <rect x="0" y="52" width="168" height="34" rx="10" fill="#1b2327" stroke="#263136" stroke-width="2"/>
+      <rect x="14" y="63" width="76" height="12" rx="6" fill="#ece7e0" opacity="0.85"/>
+
+      <rect x="0" y="96" width="168" height="34" rx="10" fill="#1b2327" stroke="#263136" stroke-width="2"/>
+      <rect x="14" y="107" width="96" height="12" rx="6" fill="#ece7e0" opacity="0.6"/>
+      <circle cx="150" cy="113" r="7" fill="#e8a33d"/>
+
+      <rect x="0" y="140" width="168" height="34" rx="10" fill="#1b2327" stroke="#263136" stroke-width="2"/>
+      <rect x="14" y="151" width="60" height="12" rx="6" fill="#ece7e0" opacity="0.6"/>
+    </g>
+  </g>
+</svg>
