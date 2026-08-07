@@ -183,8 +183,34 @@ async function serializeMessage(msg) {
 
 let chatListRetries = 0;
 let emptyListRetries = 0;
+let pushChatListInFlight = false;
+let pushChatListQueued = false;
 
+// pushChatList() se dispara en cada mensaje entrante/saliente sin esperar
+// (fire-and-forget). En un grupo activo, varios mensajes pueden llegar
+// dentro de la misma ráfaga, y sin coordinación cada uno lanzaba su propio
+// client.getChats() (round-trip completo a Puppeteer sobre todo el Store)
+// en paralelo — eso apilaba llamadas concurrentes y generaba los picos de
+// memoria/CPU. Con este mutex, una ráfaga colapsa en como mucho una llamada
+// en curso más una de cola (no se pierde el refresco, pero no se duplica).
 async function pushChatList() {
+  if (pushChatListInFlight) {
+    pushChatListQueued = true;
+    return;
+  }
+  pushChatListInFlight = true;
+  try {
+    await pushChatListOnce();
+  } finally {
+    pushChatListInFlight = false;
+    if (pushChatListQueued) {
+      pushChatListQueued = false;
+      pushChatList();
+    }
+  }
+}
+
+async function pushChatListOnce() {
   try {
     const chats = await client.getChats();
     chatListRetries = 0;
