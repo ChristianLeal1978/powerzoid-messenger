@@ -16,6 +16,26 @@ lo probemos y lo ajustemos juntos.
   eventos, que el proceso principal reenvía al renderer por IPC.
 - El renderer es HTML/CSS/JS plano: no hay build step.
 
+## Funcionalidades
+
+- **Autor en mensajes de grupo:** se resuelve el nombre de quien escribió
+  cada mensaje ajeno vía `client.getContactById()`, cacheado en memoria
+  (`contactNameCache` en `main.js`). Los mensajes propios nunca muestran
+  autor, aunque WhatsApp también rellena `msg.author` en esos casos.
+- **Fotos de perfil:** se piden con `client.getProfilePicUrl()` y se
+  descargan a `data:` URI en el proceso principal (`getAvatar()` en
+  `main.js`), cacheadas por chat — así el CSP del renderer (`img-src 'self'
+  data:`) no necesita permitir dominios externos. Si un contacto no tiene
+  foto o la privacidad la bloquea, cae a las iniciales de siempre.
+- **Campo de escritura:** crece con el texto (hasta 120px) y Enter envía;
+  Shift+Enter agrega salto de línea.
+- **Menciones (@) en grupos:** al escribir `@` se ofrece autocompletar con
+  los participantes del grupo (`wa:getGroupParticipants` en `main.js`).
+  Internamente el texto lleva `@<número>` (formato que WhatsApp requiere
+  para reconocer la mención) aunque el chat lo muestre como "@Nombre".
+- **Picker de emojis:** set fijo de emojis Unicode en `renderer.js`
+  (`EMOJIS`), sin librería externa.
+
 ## Instalación (Fedora)
 
 ```bash

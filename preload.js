@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('api', {
   onChatsError: (cb) => ipcRenderer.on('wa:chats-error', (_e, payload) => cb(payload)),
   onIncoming: (cb) => ipcRenderer.on('wa:incoming', (_e, msg) => cb(msg)),
   getMessages: (chatId) => ipcRenderer.invoke('wa:getMessages', chatId),
-  sendMessage: (chatId, text) => ipcRenderer.invoke('wa:sendMessage', { chatId, text }),
+  sendMessage: (chatId, text, mentions) => ipcRenderer.invoke('wa:sendMessage', { chatId, text, mentions }),
+  getGroupParticipants: (chatId) => ipcRenderer.invoke('wa:getGroupParticipants', chatId),
 });

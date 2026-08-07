@@ -14,9 +14,18 @@ const composer = document.getElementById('composer');
 const composerInput = document.getElementById('composer-input');
 const backBtn = document.getElementById('back-btn');
 const divider = document.getElementById('divider');
+const mentionListEl = document.getElementById('mention-list');
+const emojiPickerEl = document.getElementById('emoji-picker');
+const emojiBtn = document.getElementById('emoji-btn');
 
 let chats = [];
 let selectedChatId = null;
+let currentChatIsGroup = false;
+let groupParticipants = [];
+let pendingMentions = new Map(); // id -> nombre, para el envío
+let mentionMatches = [];
+let mentionActiveIndex = 0;
+let mentionQueryStart = -1;
 
 function initials(name) {
   return (name || '?').trim().slice(0, 2).toUpperCase();
@@ -68,8 +77,9 @@ function renderChatList() {
   chats.forEach((c) => {
     const row = document.createElement('div');
     row.className = 'chat-row' + (c.id === selectedChatId ? ' active' : '');
+    const avatarHtml = c.avatar ? `<img src="${c.avatar}" alt="" />` : initials(c.name);
     row.innerHTML = `
-      <div class="avatar">${initials(c.name)}</div>
+      <div class="avatar">${avatarHtml}</div>
       <div class="chat-meta">
         <div class="chat-name">${escapeHtml(c.name)}</div>
         <div class="chat-snippet">${escapeHtml(c.lastMessage || '')}</div>
@@ -87,11 +97,23 @@ function renderChatList() {
 // --- Conversación activa ---
 async function openChat(chatId, name) {
   selectedChatId = chatId;
+  pendingMentions = new Map();
+  hideMentionList();
+  emojiPickerEl.classList.add('hidden');
   renderChatList();
   convEmpty.classList.add('hidden');
   convActive.classList.remove('hidden');
   convName.textContent = name;
   messagesEl.innerHTML = '<div class="status-text">Cargando…</div>';
+
+  const chatMeta = chats.find((c) => c.id === chatId);
+  currentChatIsGroup = !!(chatMeta && chatMeta.isGroup);
+  groupParticipants = [];
+  if (currentChatIsGroup) {
+    window.api.getGroupParticipants(chatId).then((res) => {
+      if (res.ok && chatId === selectedChatId) groupParticipants = res.participants;
+    });
+  }
 
   const res = await window.api.getMessages(chatId);
   messagesEl.innerHTML = '';
@@ -115,7 +137,10 @@ async function openChat(chatId, name) {
 function renderMessage(msg) {
   const b = document.createElement('div');
   b.className = 'bubble' + (msg.fromMe ? ' mine' : '');
-  b.innerHTML = `${escapeHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''))}<span class="t">${formatTime(msg.timestamp)}</span>`;
+  // authorName solo viene poblado para mensajes de grupo que no son míos
+  // (ver serializeMessage() en main.js) — así identificamos quién escribió qué.
+  const authorHtml = msg.authorName ? `<span class="author">${escapeHtml(msg.authorName)}</span>` : '';
+  b.innerHTML = `${authorHtml}${escapeHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''))}<span class="t">${formatTime(msg.timestamp)}</span>`;
   messagesEl.appendChild(b);
 }
 
@@ -128,6 +153,8 @@ window.api.onIncoming((msg) => {
 
 backBtn.addEventListener('click', () => {
   selectedChatId = null;
+  hideMentionList();
+  emojiPickerEl.classList.add('hidden');
   convActive.classList.add('hidden');
   convEmpty.classList.remove('hidden');
   renderChatList();
@@ -137,10 +164,187 @@ composer.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = composerInput.value.trim();
   if (!text || !selectedChatId) return;
+  const mentions = Array.from(pendingMentions.keys());
   composerInput.value = '';
-  const res = await window.api.sendMessage(selectedChatId, text);
+  pendingMentions = new Map();
+  autoResizeComposer();
+  hideMentionList();
+  const res = await window.api.sendMessage(selectedChatId, text, mentions);
   if (!res.ok) {
     composerInput.value = text; // no perdemos lo escrito si falló el envío
+    autoResizeComposer();
+  }
+});
+
+// --- Campo de escritura: crece con el texto, Enter envía, Shift+Enter salto de línea ---
+function autoResizeComposer() {
+  composerInput.style.height = 'auto';
+  composerInput.style.height = `${Math.min(composerInput.scrollHeight, 120)}px`;
+}
+autoResizeComposer();
+
+composerInput.addEventListener('input', () => {
+  autoResizeComposer();
+  updateMentionDropdown();
+});
+
+composerInput.addEventListener('keydown', (e) => {
+  if (!mentionListEl.classList.contains('hidden')) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      mentionActiveIndex = (mentionActiveIndex + 1) % mentionMatches.length;
+      renderMentionList();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionActiveIndex = (mentionActiveIndex - 1 + mentionMatches.length) % mentionMatches.length;
+      renderMentionList();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      selectMention(mentionMatches[mentionActiveIndex]);
+      return;
+    }
+    if (e.key === 'Escape') {
+      hideMentionList();
+      return;
+    }
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    composer.requestSubmit();
+  }
+});
+
+function positionFloatingPanel(el) {
+  el.style.bottom = `${composer.offsetHeight + 6}px`;
+}
+
+function insertAtCursor(str) {
+  const start = composerInput.selectionStart;
+  const end = composerInput.selectionEnd;
+  const text = composerInput.value;
+  composerInput.value = text.slice(0, start) + str + text.slice(end);
+  const newPos = start + str.length;
+  composerInput.setSelectionRange(newPos, newPos);
+  composerInput.focus();
+  autoResizeComposer();
+}
+
+// --- Menciones (@) en grupos ---
+function getMentionQuery() {
+  const cursor = composerInput.selectionStart;
+  const text = composerInput.value.slice(0, cursor);
+  const at = text.lastIndexOf('@');
+  if (at === -1) return null;
+  const before = text[at - 1];
+  if (at > 0 && before !== ' ' && before !== '\n') return null; // @ debe iniciar una palabra
+  const query = text.slice(at + 1);
+  if (/\s/.test(query)) return null; // ya se cerró la mención con un espacio
+  return { query: query.toLowerCase(), start: at };
+}
+
+function updateMentionDropdown() {
+  if (!currentChatIsGroup || !groupParticipants.length) {
+    hideMentionList();
+    return;
+  }
+  const q = getMentionQuery();
+  if (!q) {
+    hideMentionList();
+    return;
+  }
+  mentionMatches = groupParticipants.filter((p) => p.name.toLowerCase().includes(q.query));
+  if (!mentionMatches.length) {
+    hideMentionList();
+    return;
+  }
+  mentionActiveIndex = 0;
+  mentionQueryStart = q.start;
+  renderMentionList();
+}
+
+function renderMentionList() {
+  mentionListEl.innerHTML = '';
+  mentionMatches.forEach((p, i) => {
+    const item = document.createElement('div');
+    item.className = 'mention-item' + (i === mentionActiveIndex ? ' active' : '');
+    item.textContent = p.name;
+    item.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // no perder el foco del textarea
+      selectMention(p);
+    });
+    mentionListEl.appendChild(item);
+  });
+  positionFloatingPanel(mentionListEl);
+  mentionListEl.classList.remove('hidden');
+}
+
+function hideMentionList() {
+  mentionListEl.classList.add('hidden');
+  mentionMatches = [];
+}
+
+function selectMention(participant) {
+  if (!participant) return;
+  const text = composerInput.value;
+  const cursor = composerInput.selectionStart;
+  const before = text.slice(0, mentionQueryStart);
+  const after = text.slice(cursor);
+  // WhatsApp reconoce la mención por "@<número>" en el texto + el id en
+  // `mentions`; el cliente receptor la muestra como "@Nombre" solo.
+  const inserted = `@${participant.id.split('@')[0]} `;
+  composerInput.value = before + inserted + after;
+  const newCursor = before.length + inserted.length;
+  composerInput.setSelectionRange(newCursor, newCursor);
+  pendingMentions.set(participant.id, participant.name);
+  hideMentionList();
+  autoResizeComposer();
+  composerInput.focus();
+}
+
+// --- Picker de emojis ---
+const EMOJIS = [
+  '😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😜', '🤔', '😎',
+  '🙂', '😉', '😇', '🥳', '😴', '🤗', '😅', '😬', '🙄', '😐',
+  '😢', '😭', '😡', '🤯', '😱', '🤷', '🙌', '👏', '👍', '👎',
+  '🙏', '💪', '👀', '✅', '❌', '🔥', '✨', '🎉', '❤️', '💀',
+];
+
+function populateEmojiPicker() {
+  emojiPickerEl.innerHTML = '';
+  EMOJIS.forEach((emoji) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = emoji;
+    b.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      insertAtCursor(emoji);
+    });
+    emojiPickerEl.appendChild(b);
+  });
+}
+populateEmojiPicker();
+
+emojiBtn.addEventListener('click', () => {
+  if (emojiPickerEl.classList.contains('hidden')) {
+    hideMentionList();
+    positionFloatingPanel(emojiPickerEl);
+    emojiPickerEl.classList.remove('hidden');
+  } else {
+    emojiPickerEl.classList.add('hidden');
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (
+    !emojiPickerEl.classList.contains('hidden') &&
+    !emojiPickerEl.contains(e.target) &&
+    e.target !== emojiBtn
+  ) {
+    emojiPickerEl.classList.add('hidden');
   }
 });
 

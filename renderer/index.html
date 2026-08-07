@@ -43,8 +43,11 @@
           <span id="conv-name" class="conv-name"></span>
         </div>
         <div id="messages" class="messages"></div>
+        <div id="mention-list" class="mention-list hidden"></div>
+        <div id="emoji-picker" class="emoji-picker hidden"></div>
         <form id="composer" class="composer">
-          <input id="composer-input" type="text" placeholder="Escribe un mensaje" autocomplete="off" />
+          <button type="button" id="emoji-btn" class="emoji-btn" aria-label="Emojis">&#9786;</button>
+          <textarea id="composer-input" rows="1" placeholder="Escribe un mensaje"></textarea>
           <button type="submit" aria-label="Enviar">&#10148;</button>
         </form>
       </div>
