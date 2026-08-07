@@ -1,6 +1,7 @@
 const qrScreen = document.getElementById('qr-screen');
 const qrImg = document.getElementById('qr-img');
 const qrStatus = document.getElementById('qr-status');
+const qrRefreshBtn = document.getElementById('qr-refresh-btn');
 const app = document.getElementById('app');
 const rail = document.getElementById('rail');
 const statusDot = document.getElementById('status-dot');
@@ -52,6 +53,15 @@ window.api.onQr((dataUrl) => {
   qrImg.src = dataUrl;
   qrStatus.textContent = 'Esperando código…';
   setConnectionState('reconnecting');
+  qrRefreshBtn.disabled = false;
+  qrRefreshBtn.textContent = 'Generar nuevo código';
+});
+
+qrRefreshBtn.addEventListener('click', async () => {
+  qrRefreshBtn.disabled = true;
+  qrRefreshBtn.textContent = 'Generando…';
+  qrStatus.textContent = 'Generando nuevo código…';
+  await window.api.regenerateQr();
 });
 
 window.api.onStatus((status) => {

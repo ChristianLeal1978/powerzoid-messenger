@@ -247,6 +247,25 @@ function createClient() {
   client.initialize();
 }
 
+async function regenerateQr() {
+  // client.destroy() cierra Puppeteer con browser.close() (cierre normal,
+  // no un kill) antes de reemplazar el cliente — evita el mismo tipo de
+  // corrupción de perfil que ya nos pasó factura con kills abruptos.
+  try {
+    if (client) await client.destroy();
+  } catch (err) {
+    console.error('[wa] destroy() falló al regenerar QR:', err.message || err);
+  }
+  chatListRetries = 0;
+  emptyListRetries = 0;
+  createClient();
+}
+
+ipcMain.handle('wa:regenerateQr', async () => {
+  regenerateQr();
+  return { ok: true };
+});
+
 ipcMain.handle('wa:getMessages', async (_e, chatId) => {
   try {
     const chat = await client.getChatById(chatId);

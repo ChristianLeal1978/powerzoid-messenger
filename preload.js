@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld('api', {
   sendMessage: (chatId, text, mentions) => ipcRenderer.invoke('wa:sendMessage', { chatId, text, mentions }),
   getGroupParticipants: (chatId) => ipcRenderer.invoke('wa:getGroupParticipants', chatId),
   reactToMessage: (messageId, emoji) => ipcRenderer.invoke('wa:reactToMessage', { messageId, emoji }),
+  regenerateQr: () => ipcRenderer.invoke('wa:regenerateQr'),
 });

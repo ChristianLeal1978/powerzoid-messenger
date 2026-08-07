@@ -87,6 +87,19 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   font-size: 11px;
   color: var(--text-dim);
 }
+.qr-refresh-btn {
+  margin-top: 14px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+.qr-refresh-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.qr-refresh-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* --- Barra superior --- */
 .topbar {
