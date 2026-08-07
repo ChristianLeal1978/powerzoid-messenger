@@ -12,33 +12,49 @@ npm install && npm start
 Primera vez: escanear el QR desde el teléfono. La sesión queda guardada en
 `~/.config/whatsapp-sidebar/wwebjs_auth`.
 
-## Bloqueador activo — revisar esto antes de asumir que algo "no sirve"
-`whatsapp-web.js` tiene un bug abierto, real y no resuelto por mí, provocado
-por un cambio de WhatsApp Web de julio 2026 (dejaron Webpack). Rompe
-`Client.getChats()` y `Client.getChatById()` con un error opaco `r: r`.
-Reportes: github.com/wwebjs/whatsapp-web.js/issues/201845, /201838, /201833.
+## Bloqueador — mitigado con un parche comunitario no oficial (2026-08-07)
+`whatsapp-web.js` tuvo (tiene, en npm) un bug abierto, real y no resuelto por
+mí, provocado por un cambio de WhatsApp Web de julio 2026 (dejaron Webpack).
+Rompe `Client.getChats()` y `Client.getChatById()` con un error opaco `r: r`.
+Reportes: github.com/wwebjs/whatsapp-web.js/issues/201845, /201838, /201833
+— **todos seguían abiertos** al aplicar el parche, y la versión de npm
+(`1.34.7`) seguía siendo la misma que tenía el bug.
 
-Antes de gastar tiempo debugueando esto como si fuera nuestro código:
-1. `npm view whatsapp-web.js version` y compara con lo instalado — puede
-   haber salido un parche desde la última vez.
-2. Revisa el estado de esos issues y de la PR #201832 (parche comunitario
-   temporal, con su propio bug conocido de mensajes de grupo sin descifrar).
-3. Si sigue roto, evaluar plan B: migrar a `@whiskeysockets/baileys`
-   (librería alternativa que habla el protocolo multi-device directo por
-   WebSocket, sin Puppeteer ni scraping del DOM — no debería sufrir este
-   tipo de rotura). Es un cambio grande (reimplementar auth, sesión, envío,
+`package.json` ya no apunta a npm para esta dependencia: apunta al fork con
+el parche de la PR #201832, fijado a un commit concreto:
+```
+"whatsapp-web.js": "github:wwebjs/whatsapp-web.js#f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761"
+```
+Probado en vivo (2026-08-07): `getChats()` y `getChatById()` funcionan,
+la lista de chats carga y las conversaciones se abren con historial.
+Caveat conocido y no verificado por mí: el autor del parche reportó mensajes
+de grupo que no descifran bien en el teléfono principal — vigilar eso si se
+usan chats de grupo.
+
+Antes de asumir que este parche sigue haciendo falta o de tocar esto:
+1. `npm view whatsapp-web.js version` — si ya alcanzó o superó lo que trae
+   el parche, evaluar volver a la versión oficial de npm.
+2. Revisa el estado de esos issues y de la PR #201832 — si se mergeó, volver
+   a `"whatsapp-web.js": "^1.x.x"` apuntando a npm.
+3. Si en algún momento este tipo de parche deja de alcanzar, evaluar plan B:
+   migrar a `@whiskeysockets/baileys` (librería alternativa que habla el
+   protocolo multi-device directo por WebSocket, sin Puppeteer ni scraping
+   del DOM). Es un cambio grande (reimplementar auth, sesión, envío,
    recepción), tratarlo como su propia tarea, no como parche rápido.
 
-Ya está aplicado el único workaround real disponible del lado nuestro:
-`serializeMessage()` en `main.js` no llama a `msg.getChat()` (dispara el
-mismo bug); deriva el chatId de `msg.from`/`msg.to`, que ya vienen sin
-necesitar otra consulta al Store.
+Se mantiene además el workaround del lado nuestro: `serializeMessage()` en
+`main.js` no llama a `msg.getChat()` (dispara el mismo bug); deriva el
+chatId de `msg.from`/`msg.to`, que ya vienen sin necesitar otra consulta al
+Store.
 
 ## Prioridades, en orden
-1. Confirmar que la ventana se posiciona bien en la sesión real (Wayland vía
-   XWayland vs. X11 nativo — ver README). No se pudo probar en el entorno
-   donde se generó este proyecto: no hay entorno gráfico ahí.
-2. Resolver o mitigar el bloqueador de arriba.
+1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho
+   el 2026-08-07: en GNOME/Wayland vía XWayland, la ventana queda en x=0,
+   ancho 340px, alto = pantalla menos la barra superior (y=32 por el panel
+   de GNOME, no un bug). No probado todavía en GNOME on Xorg nativo.
+2. ~~Resolver o mitigar el bloqueador de arriba~~ — mitigado el 2026-08-07
+   con el parche comunitario (ver sección de arriba). No es una solución
+   definitiva: sigue pendiente de un fix oficial mergeado.
 3. Reservar espacio de pantalla como un panel real (`_NET_WM_STRUT_PARTIAL`
    vía X11) para que otras ventanas no se monten encima.
 4. Notificaciones nativas, soporte de medios, atajo para mostrar/ocultar.

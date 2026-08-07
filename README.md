@@ -34,47 +34,38 @@ así que no tendrás que volver a escanear en cada inicio.
 
 ## Problema conocido (agosto 2026): `r: r` al cargar chats o mensajes
 
-Si al escanear el QR la app queda pegada, sin lista de chats, o el mensaje de
-estado dice "No se pudo cargar la lista de chats": **no es un bug de este
-proyecto**. Es un bug real, abierto y activo en `whatsapp-web.js` mismo,
+Bug real, abierto y activo en `whatsapp-web.js` mismo (no de este proyecto),
 provocado por un cambio que WhatsApp Web hizo en julio de 2026 (dejaron de
 usar Webpack y renombraron cómo se serializan los IDs internos). Rompe
 `Client.getChats()`, `Client.getChatById()` y `Message.downloadMedia()` para
-prácticamente todo el mundo que usa la librería ahora mismo, no solo acá.
+prácticamente todo el mundo que usa la librería, no solo acá.
 
-Reportes relevantes en el repo oficial (`wwebjs/whatsapp-web.js`):
+Reportes relevantes en el repo oficial (`wwebjs/whatsapp-web.js`), todos
+seguían **abiertos** al 2026-08-07:
 - [#201845](https://github.com/wwebjs/whatsapp-web.js/issues/201845) — `getChats()`/`getState()` lanzan `r: r`.
 - [#201838](https://github.com/wwebjs/whatsapp-web.js/issues/201838) — mismo error en `getChatById()`.
 - [#201833](https://github.com/wwebjs/whatsapp-web.js/issues/201833) — mismo error al descargar medios.
-- [#201832](https://github.com/wwebjs/whatsapp-web.js/pull/201832) — parche temporal de la comunidad (no oficial todavía).
+- [#201832](https://github.com/wwebjs/whatsapp-web.js/pull/201832) — parche temporal de la comunidad, tampoco mergeado todavía.
 
-Ya apliqué en el código el único workaround real de nuestro lado: dejé de
+**Estado actual: mitigado.** Este proyecto usa desde el 2026-08-07 el fork
+con el parche de la PR #201832, fijado en `package.json`:
+```
+"whatsapp-web.js": "github:wwebjs/whatsapp-web.js#f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761"
+```
+Probado en vivo: la lista de chats carga y las conversaciones abren su
+historial normalmente. Caveat conocido (reportado por el autor del parche,
+no verificado acá): los mensajes de grupo podrían no descifrar bien en el
+teléfono principal — si notas eso en un chat de grupo, avisa.
+
+Además, ya está aplicado en el código el workaround de nuestro lado: dejé de
 llamar a `msg.getChat()` en cada mensaje entrante (esa llamada también
 dispara el bug) y derivo el chat directamente de los datos que ya trae el
-mensaje. Eso hace que **recibir mensajes en tiempo real debería funcionar**.
-Lo que sigue roto, porque no tiene workaround posible desde afuera de la
-librería, es `getChats()` — la carga inicial de la lista de conversaciones —
-y `getChatById()` al abrir el historial de una conversación. La app ahora
-reintenta solo y te avisa en pantalla en vez de quedarse muda, pero mientras
-el bug siga abierto, esas dos cosas seguirán fallando.
+mensaje.
 
-**Qué puedes hacer:**
-
-1. **Esperar y reintentar.** Es un bug "high impact" reportado hace unas
-   semanas y muy visible (afecta a cualquiera que use la librería), así que
-   es razonable esperar una versión parcheada pronto. Revisa
-   [github.com/wwebjs/whatsapp-web.js/releases](https://github.com/wwebjs/whatsapp-web.js/releases)
-   de vez en cuando y corre `npm update whatsapp-web.js`.
-2. **Probar el parche comunitario no oficial**, a tu propio riesgo — quien lo
-   reportó también encontró un problema nuevo con él (mensajes de grupo que
-   no descifran bien en el teléfono principal), así que pruébalo primero con
-   un chat que no te importe:
-   ```bash
-   npm install github:wwebjs/whatsapp-web.js#f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761
-   ```
-3. Si nada de esto funciona todavía cuando lo pruebes, cuéntame qué mensaje
-   de error te tira exactamente y seguimos ajustando — puede que para
-   entonces ya haya más información sobre el estado del arreglo.
+Cuando la PR #201832 se mergee o salga un release oficial que la incluya,
+conviene volver a `"whatsapp-web.js": "^1.x.x"` apuntando a npm en vez de al
+fork — revisa [github.com/wwebjs/whatsapp-web.js/releases](https://github.com/wwebjs/whatsapp-web.js/releases)
+de vez en cuando.
 
 ## Sobre el anclaje al borde (importante)
 
