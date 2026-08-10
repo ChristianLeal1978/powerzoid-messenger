@@ -96,10 +96,12 @@ ipcMain.handle('sl:sendMessage', (_e, payload) => slack.sendMessage(payload));
 ipcMain.handle('sl:sendImage', (_e, payload) => slack.sendImage(payload));
 ipcMain.handle('sl:reactToMessage', (_e, payload) => slack.reactToMessage(payload));
 ipcMain.handle('sl:getGroupParticipants', (_e, chatId) => slack.getGroupParticipants(chatId));
+ipcMain.handle('sl:searchUsers', (_e, query) => slack.searchUsers(query));
+ipcMain.handle('sl:openDirectMessage', (_e, userId) => slack.openDirectMessage(userId));
 
-ipcMain.handle('sl:connect', async (_e, { botToken, appToken }) => {
-  const res = await slack.connect({ botToken, appToken });
-  if (res.ok) saveSlackCredentials({ botToken, appToken });
+ipcMain.handle('sl:connect', async (_e, { botToken, appToken, myUserId }) => {
+  const res = await slack.connect({ botToken, appToken, myUserId });
+  if (res.ok) saveSlackCredentials({ botToken, appToken, myUserId });
   return res;
 });
 

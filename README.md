@@ -95,6 +95,7 @@ oauth_config:
       - groups:read
       - im:history
       - im:read
+      - im:write
       - mpim:history
       - mpim:read
       - reactions:read
@@ -128,7 +129,7 @@ Versión JSON (pestaña **JSON** del editor), mismo contenido:
     "scopes": {
       "bot": [
         "channels:history", "channels:read", "chat:write", "files:read", "files:write",
-        "groups:history", "groups:read", "im:history", "im:read", "mpim:history",
+        "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history",
         "mpim:read", "reactions:read", "reactions:write", "users:read"
       ]
     }
@@ -173,6 +174,15 @@ no hay que repetir esto en cada inicio. El engranaje (⚙) junto al buscador,
 visible solo en la pestaña de Slack, permite desconectar y volver a
 emparejar con otros tokens.
 
+Hay un tercer campo opcional en esa misma pantalla: **"Tu ID de usuario en
+Slack"**. El bot y vos sois identidades distintas para la API, así que si
+querés que la lista de chats filtre ruido (solo DMs y canales donde te
+mencionan directamente, en vez de todos los canales a los que el bot
+pertenece), completa ese campo con tu ID de miembro — lo encuentras en
+Slack: tu foto de perfil → **"Ver perfil completo"** → **"Más"** → **"Copiar
+ID de miembro"** (algo como `U0123456789`). Si lo dejas vacío, se muestran
+todos los canales del bot sin filtrar, como hasta ahora.
+
 ### Limitaciones conocidas de la integración de Slack
 
 - **Sin hilos:** los mensajes se postean siempre "planos" al canal, no como
@@ -187,6 +197,10 @@ emparejar con otros tokens.
   que ya usa WhatsApp) mapeado a los shortcodes de Slack más comunes
   (`slack.js`, `EMOJI_TO_SLACK`) — reaccionar con un emoji fuera de ese set
   no está soportado desde acá.
+- **El filtro de menciones mira solo el último mensaje de cada canal:** si
+  te mencionaron hace un rato y después alguien más escribió sin mencionarte,
+  el canal desaparece de la lista aunque la mención siga sin responder. No
+  escanea todo el historial reciente, por costo de llamadas a la API.
 
 ## Problema conocido (agosto 2026): `r: r` al cargar chats o mensajes
 

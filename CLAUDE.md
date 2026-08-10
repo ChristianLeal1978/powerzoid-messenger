@@ -79,6 +79,20 @@ menciones, qué `window.api.*` llamar).
   en `pushChatList()`/`getAvatar()` de `slack.js` que ya existía para
   WhatsApp (ver comentarios ahí) — Slack también rate-limita por método, y
   Socket Mode dispara un evento por mensaje.
+- **`conversations.list` pagina todo el workspace** (`listAllConversations()`
+  en `slack.js`) — en un workspace grande devuelve TODOS los canales
+  públicos, no solo los del bot, así que sin paginar los canales del bot
+  podían quedar fuera de la primera página (bug real, encontrado y
+  corregido 2026-08-10). La membresía resultante se cachea 5 minutos
+  (`getMemberChannels()`) para no repetir esa paginación en cada mensaje.
+- **Filtro opcional de menciones:** si el usuario completa su propio ID de
+  Slack (campo opcional en la pantalla de emparejamiento, distinto del
+  `botUserId` del bot), `pushChatListOnce()` en `slack.js` deja afuera los
+  canales normales cuyo último mensaje no lo menciona directamente
+  (`<@ID>` crudo, vía `textMentionsUser()`); DMs y mensajes directos de
+  grupo siempre se muestran. Sin ese campo, comportamiento sin filtrar de
+  siempre. Mira solo el último mensaje de cada canal, no todo el historial
+  reciente (ver limitación en README).
 
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho

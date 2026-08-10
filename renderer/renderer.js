@@ -6,6 +6,7 @@ const slackPairingScreen = document.getElementById('slack-pairing-screen');
 const slackPairingForm = document.getElementById('slack-pairing-form');
 const slackBotTokenInput = document.getElementById('slack-bot-token');
 const slackAppTokenInput = document.getElementById('slack-app-token');
+const slackMyUserIdInput = document.getElementById('slack-my-user-id');
 const slackConnectBtn = document.getElementById('slack-connect-btn');
 const slackPairingStatus = document.getElementById('slack-pairing-status');
 const slackDisconnectBtn = document.getElementById('slack-disconnect-btn');
@@ -203,11 +204,12 @@ slackPairingForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const botToken = slackBotTokenInput.value.trim();
   const appToken = slackAppTokenInput.value.trim();
+  const myUserId = slackMyUserIdInput.value.trim() || null;
   if (!botToken || !appToken) return;
   slackConnectBtn.disabled = true;
   slackConnectBtn.textContent = 'Conectando…';
   handleStatus('sl', 'connecting');
-  const res = await window.api.sl.connect(botToken, appToken);
+  const res = await window.api.sl.connect(botToken, appToken, myUserId);
   slackConnectBtn.disabled = false;
   slackConnectBtn.textContent = 'Conectar';
   if (!res.ok) {
@@ -224,6 +226,7 @@ slackDisconnectBtn.addEventListener('click', async () => {
   await window.api.sl.disconnect();
   slackBotTokenInput.value = '';
   slackAppTokenInput.value = '';
+  slackMyUserIdInput.value = '';
   providerData.sl.chats = [];
   providerData.sl.everReady = false;
   closeConversation();
@@ -264,27 +267,111 @@ function renderChatList() {
     empty.className = 'chat-search-empty';
     empty.textContent = 'Sin resultados';
     chatListEl.appendChild(empty);
+  } else {
+    list.forEach((c) => {
+      const row = document.createElement('div');
+      row.className = 'chat-row' + (c.id === selectedChatId ? ' active' : '');
+      const avatarHtml = c.avatar ? `<img src="${c.avatar}" alt="" />` : initials(c.name);
+      row.innerHTML = `
+        <div class="avatar">${avatarHtml}</div>
+        <div class="chat-meta">
+          <div class="chat-name">${escapeHtml(c.name)}</div>
+          <div class="chat-snippet">${escapeHtml(c.lastMessage || '')}</div>
+        </div>
+        <div class="chat-side">
+          <span class="chat-time">${formatTime(c.timestamp)}</span>
+          ${chatReactionAlerts.has(c.id) ? `<span class="reaction-alert">${chatReactionAlerts.get(c.id)}</span>` : ''}
+          ${c.unreadCount ? `<span class="badge">${c.unreadCount}</span>` : ''}
+        </div>
+      `;
+      row.addEventListener('click', () => openChat(c.id, c.name));
+      chatListEl.appendChild(row);
+    });
+  }
+  // Slack: si hay una búsqueda activa y ya trajimos resultados de personas
+  // del workspace (ver updateSlackPeopleSearch()), se re-pintan acá porque
+  // chatListEl.innerHTML se acaba de vaciar arriba. No dispara un nuevo
+  // pedido — solo redibuja lo último que ya llegó.
+  if (activeProvider === 'sl' && chatSearchQuery.trim() && lastPeopleResults.length) {
+    renderPeopleResults(lastPeopleResults);
+  }
+}
+
+// --- Slack: buscar personas del workspace cuando la búsqueda de chats no
+// encuentra nada (o para abrir un DM nuevo con alguien sin conversación
+// previa) ---
+let peopleSearchTimer = null;
+let peopleSearchToken = 0;
+let lastPeopleResults = [];
+
+function scheduleSlackPeopleSearch() {
+  if (activeProvider !== 'sl') return;
+  clearTimeout(peopleSearchTimer);
+  peopleSearchTimer = setTimeout(updateSlackPeopleSearch, 300);
+}
+
+async function updateSlackPeopleSearch() {
+  const q = chatSearchQuery.trim();
+  if (activeProvider !== 'sl' || !q) {
+    lastPeopleResults = [];
+    removePeopleResults();
     return;
   }
-  list.forEach((c) => {
+  const token = ++peopleSearchToken;
+  const res = await window.api.sl.searchUsers(q);
+  // Si mientras esperábamos la respuesta cambiaron de pestaña o siguieron
+  // escribiendo, este resultado ya es viejo — no lo pintamos.
+  if (token !== peopleSearchToken || activeProvider !== 'sl' || chatSearchQuery.trim() !== q) return;
+  lastPeopleResults = res.ok ? res.users : [];
+  if (lastPeopleResults.length) renderPeopleResults(lastPeopleResults);
+  else removePeopleResults();
+}
+
+function removePeopleResults() {
+  const existing = chatListEl.querySelector('.people-results');
+  if (existing) existing.remove();
+}
+
+function renderPeopleResults(users) {
+  removePeopleResults();
+  const section = document.createElement('div');
+  section.className = 'people-results';
+  const header = document.createElement('div');
+  header.className = 'people-results-header';
+  header.textContent = 'Personas';
+  section.appendChild(header);
+  users.forEach((u) => {
     const row = document.createElement('div');
-    row.className = 'chat-row' + (c.id === selectedChatId ? ' active' : '');
-    const avatarHtml = c.avatar ? `<img src="${c.avatar}" alt="" />` : initials(c.name);
+    row.className = 'chat-row';
+    const avatarHtml = u.avatar ? `<img src="${u.avatar}" alt="" />` : initials(u.name);
     row.innerHTML = `
       <div class="avatar">${avatarHtml}</div>
       <div class="chat-meta">
-        <div class="chat-name">${escapeHtml(c.name)}</div>
-        <div class="chat-snippet">${escapeHtml(c.lastMessage || '')}</div>
-      </div>
-      <div class="chat-side">
-        <span class="chat-time">${formatTime(c.timestamp)}</span>
-        ${chatReactionAlerts.has(c.id) ? `<span class="reaction-alert">${chatReactionAlerts.get(c.id)}</span>` : ''}
-        ${c.unreadCount ? `<span class="badge">${c.unreadCount}</span>` : ''}
+        <div class="chat-name">${escapeHtml(u.name)}</div>
+        <div class="chat-snippet">Iniciar mensaje directo</div>
       </div>
     `;
-    row.addEventListener('click', () => openChat(c.id, c.name));
-    chatListEl.appendChild(row);
+    row.addEventListener('click', () => startSlackDirectMessage(u.id, u.name));
+    section.appendChild(row);
   });
+  chatListEl.appendChild(section);
+}
+
+async function startSlackDirectMessage(userId, name) {
+  lastPeopleResults = [];
+  const res = await window.api.sl.openDirectMessage(userId);
+  if (!res.ok) {
+    chatListStatus.textContent = 'No se pudo abrir el mensaje directo — revisa que la app de Slack tenga el scope im:write (ver README) y que esté reinstalada.';
+    chatListStatus.classList.remove('hidden');
+    return;
+  }
+  chatListStatus.classList.add('hidden');
+  closeChatSearch();
+  if (!providerData.sl.chats.some((c) => c.id === res.chat.id)) {
+    providerData.sl.chats = [res.chat, ...providerData.sl.chats];
+    if (activeProvider === 'sl') chats = providerData.sl.chats;
+  }
+  openChat(res.chat.id, name);
 }
 
 // --- Buscador de chats ---
@@ -301,6 +388,8 @@ function closeChatSearch() {
   searchBtn.classList.remove('active');
   chatSearchInput.value = '';
   chatSearchQuery = '';
+  clearTimeout(peopleSearchTimer);
+  lastPeopleResults = [];
   renderChatList();
 }
 
@@ -315,6 +404,7 @@ searchBtn.addEventListener('click', () => {
 chatSearchInput.addEventListener('input', () => {
   chatSearchQuery = chatSearchInput.value;
   renderChatList();
+  scheduleSlackPeopleSearch();
 });
 
 chatSearchInput.addEventListener('keydown', (e) => {

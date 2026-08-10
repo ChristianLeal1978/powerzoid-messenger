@@ -42,6 +42,11 @@
           <span>App-Level Token</span>
           <input type="password" id="slack-app-token" placeholder="xapp-…" autocomplete="off" spellcheck="false" />
         </label>
+        <label class="slack-field">
+          <span>Tu ID de usuario en Slack (opcional)</span>
+          <input type="text" id="slack-my-user-id" placeholder="U0123456789" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="slack-field-hint">Si lo completas, la lista solo muestra DMs y canales donde te mencionan directamente. Lo encuentras en tu perfil de Slack → "Más" → "Copiar ID de miembro".</p>
         <button type="submit" id="slack-connect-btn" class="qr-refresh-btn">Conectar</button>
       </form>
       <p class="status-text" id="slack-pairing-status"></p>

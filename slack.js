@@ -7,6 +7,16 @@ let socket; // SocketModeClient, null hasta connect()
 let send; // (channel, payload) => void, inyectado desde main.js
 let botToken = null;
 let botUserId = null;
+// Id de usuario de Slack de la persona (no del bot) — opcional. Si está
+// seteado, la lista de chats deja afuera los canales normales donde el
+// último mensaje no la menciona directamente (ver pushChatListOnce()). Los
+// DMs y mensajes directos de grupo siempre se muestran, sean o no mención.
+let myUserId = null;
+
+function textMentionsUser(rawText, userId) {
+  if (!userId || !rawText) return false;
+  return rawText.includes(`<@${userId}>`);
+}
 
 // --- Mapa emoji Unicode <-> shortcode de Slack ---
 // La lista de reacciones rápidas y el picker de emojis en renderer.js usan
@@ -187,22 +197,24 @@ async function resolveConversationMeta(c) {
     name = c.name || c.id;
   }
   const cached = lastMessageCache.get(c.id);
-  if (cached) return { name, avatar, lastMessage: cached.text, timestamp: cached.ts };
+  if (cached) return { name, avatar, lastMessage: cached.text, timestamp: cached.ts, mentionsMe: cached.mentionsMe };
   let lastMessage = '';
   let timestamp = 0;
+  let mentionsMe = false;
   try {
     const hist = await web.conversations.history({ channel: c.id, limit: 1 });
     const last = hist.messages && hist.messages[0];
     if (last) {
       lastMessage = await formatSlackText(last.text);
       timestamp = Math.floor(parseFloat(last.ts)) || 0;
-      lastMessageCache.set(c.id, { text: lastMessage, ts: timestamp });
+      mentionsMe = textMentionsUser(last.text, myUserId);
+      lastMessageCache.set(c.id, { text: lastMessage, ts: timestamp, mentionsMe });
     }
   } catch (err) {
     // Canal sin historial accesible (el bot no es miembro todavía, etc.) —
     // se deja vacío en vez de reintentar en cada refresco.
   }
-  return { name, avatar, lastMessage, timestamp };
+  return { name, avatar, lastMessage, timestamp, mentionsMe };
 }
 
 // conversations.list devuelve, para canales públicos, TODOS los del
@@ -282,22 +294,27 @@ async function pushChatListOnce() {
   if (!web) return;
   try {
     const channels = await getMemberChannels();
-    const list = await Promise.all(
-      channels.slice(0, 60).map(async (c) => {
-        const meta = await resolveConversationMeta(c);
-        return {
-          id: c.id,
-          name: meta.name,
-          isGroup: !c.is_im,
-          // La Web API no expone conteo real de no-leídos para bots de forma
-          // simple — se deja en 0 (ver limitación conocida en README).
-          unreadCount: 0,
-          lastMessage: meta.lastMessage,
-          timestamp: meta.timestamp,
-          avatar: meta.avatar,
-        };
-      })
+    const withMeta = await Promise.all(
+      channels.map(async (c) => ({ channel: c, meta: await resolveConversationMeta(c) }))
     );
+    // Los DMs y mensajes directos de grupo son "conversación privada" por
+    // definición — siempre se muestran. Los canales normales solo entran si
+    // no hay filtro configurado (myUserId vacío) o si el último mensaje
+    // menciona directamente a la persona (ver textMentionsUser()).
+    const relevant = withMeta.filter(
+      ({ channel, meta }) => channel.is_im || channel.is_mpim || !myUserId || meta.mentionsMe
+    );
+    const list = relevant.slice(0, 60).map(({ channel, meta }) => ({
+      id: channel.id,
+      name: meta.name,
+      isGroup: !channel.is_im,
+      // La Web API no expone conteo real de no-leídos para bots de forma
+      // simple — se deja en 0 (ver limitación conocida en README).
+      unreadCount: 0,
+      lastMessage: meta.lastMessage,
+      timestamp: meta.timestamp,
+      avatar: meta.avatar,
+    }));
     list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     send('sl:chats', list);
   } catch (err) {
@@ -362,7 +379,11 @@ function wireSocketEvents() {
     if (!event || !event.channel) return;
     if (event.subtype === 'message_changed' || event.subtype === 'message_deleted') return;
     const serialized = await serializeMessage(event, event.channel);
-    lastMessageCache.set(event.channel, { text: serialized.body, ts: serialized.timestamp });
+    lastMessageCache.set(event.channel, {
+      text: serialized.body,
+      ts: serialized.timestamp,
+      mentionsMe: textMentionsUser(event.text, myUserId),
+    });
     send('sl:incoming', serialized);
     pushChatList();
   });
@@ -377,8 +398,9 @@ function wireSocketEvents() {
   });
 }
 
-async function connect({ botToken: bt, appToken }) {
+async function connect({ botToken: bt, appToken, myUserId: uid }) {
   botToken = bt;
+  myUserId = uid || null;
   web = new WebClient(botToken);
   try {
     const auth = await web.auth.test();
@@ -407,6 +429,101 @@ async function connect({ botToken: bt, appToken }) {
   return { ok: true };
 }
 
+// --- Directorio de usuarios del workspace, para "buscar persona" cuando
+// todavía no hay un DM abierto con ella. La Web API no tiene un método de
+// búsqueda por nombre para bots — hay que traer users.list() completo (con
+// el mismo criterio de paginación y techo de páginas que
+// listAllConversations()) y filtrar acá. Cambia poco durante una sesión,
+// así que se cachea más tiempo que la membresía de canales.
+const USER_DIRECTORY_REFRESH_COOLDOWN_MS = 15 * 60 * 1000;
+let userDirectoryCache = null;
+let userDirectoryFetchedAt = 0;
+
+async function listAllUsers() {
+  const users = [];
+  let cursor;
+  let pages = 0;
+  do {
+    const res = await web.users.list({ limit: CONVERSATIONS_LIST_PAGE_SIZE, cursor });
+    users.push(...(res.members || []));
+    cursor = res.response_metadata && res.response_metadata.next_cursor;
+    pages += 1;
+  } while (cursor && pages < CONVERSATIONS_LIST_MAX_PAGES);
+  if (cursor) {
+    console.error('[sl] users.list(): se alcanzó el techo de páginas, puede haber personas sin listar.');
+  }
+  return users;
+}
+
+async function getUserDirectory(forceRefresh) {
+  const stale = Date.now() - userDirectoryFetchedAt > USER_DIRECTORY_REFRESH_COOLDOWN_MS;
+  if (userDirectoryCache && !forceRefresh && !stale) return userDirectoryCache;
+  const all = await listAllUsers();
+  userDirectoryCache = all.filter(
+    (u) => !u.deleted && !u.is_bot && u.id !== botUserId && u.id !== 'USLACKBOT'
+  );
+  userDirectoryFetchedAt = Date.now();
+  return userDirectoryCache;
+}
+
+async function searchUsers(query) {
+  if (!web) return { ok: false, users: [] };
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return { ok: true, users: [] };
+  try {
+    const directory = await getUserDirectory();
+    const matches = directory
+      .filter((u) => {
+        const p = u.profile || {};
+        const name = (p.display_name || p.real_name || u.name || '').toLowerCase();
+        return name.includes(q);
+      })
+      .slice(0, 20);
+    const users = await Promise.all(
+      matches.map(async (u) => {
+        const p = u.profile || {};
+        const name = p.display_name || p.real_name || u.name || u.id;
+        const avatar = await getAvatar(u.id, p.image_192 || p.image_72 || null);
+        return { id: u.id, name, avatar };
+      })
+    );
+    return { ok: true, users };
+  } catch (err) {
+    console.error('[sl] searchUsers() falló:', err.message || err);
+    return { ok: false, users: [] };
+  }
+}
+
+async function openDirectMessage(userId) {
+  if (!web) return { ok: false };
+  try {
+    const res = await web.conversations.open({ users: userId });
+    const channelId = res.channel && res.channel.id;
+    if (!channelId) return { ok: false };
+    const info = await getUserInfo(userId);
+    const avatar = await getAvatar(userId, info.avatarUrl);
+    const chat = {
+      id: channelId,
+      name: info.name,
+      isGroup: false,
+      unreadCount: 0,
+      lastMessage: '',
+      timestamp: Math.floor(Date.now() / 1000),
+      avatar,
+    };
+    // Para que aparezca en la lista sin esperar el próximo refresco
+    // completo — getMemberChannels() tiene su propio cooldown de 5 min.
+    if (memberChannelsCache && !memberChannelsCache.some((c) => c.id === channelId)) {
+      memberChannelsCache.push({ id: channelId, user: userId, is_im: true, is_mpim: false, is_member: true });
+    }
+    pushChatList();
+    return { ok: true, chat };
+  } catch (err) {
+    console.error('[sl] openDirectMessage() falló:', err.message || err);
+    return { ok: false };
+  }
+}
+
 function disconnect() {
   if (socket) {
     try {
@@ -419,10 +536,15 @@ function disconnect() {
   web = null;
   botUserId = null;
   botToken = null;
+  myUserId = null;
   lastMessageCache.clear();
   userInfoCache.clear();
   avatarCache.clear();
   avatarFailedAt.clear();
+  memberChannelsCache = null;
+  memberChannelsFetchedAt = 0;
+  userDirectoryCache = null;
+  userDirectoryFetchedAt = 0;
   send('sl:status', 'not-configured');
 }
 
@@ -511,4 +633,6 @@ module.exports = {
   sendImage,
   reactToMessage,
   getGroupParticipants,
+  searchUsers,
+  openDirectMessage,
 };
