@@ -84,7 +84,14 @@ menciones, qué `window.api.*` llamar).
   públicos, no solo los del bot, así que sin paginar los canales del bot
   podían quedar fuera de la primera página (bug real, encontrado y
   corregido 2026-08-10). La membresía resultante se cachea 5 minutos
-  (`getMemberChannels()`) para no repetir esa paginación en cada mensaje.
+  (`getMemberChannels()`) para no repetir esa paginación en cada mensaje —
+  pero eso significaba que un canal nuevo para el bot (primer DM de
+  alguien, invitación a un canal) no aparecía hasta que venciera el
+  cooldown (otro bug real, mismo día): el handler de `message` en
+  `wireSocketEvents()` ahora fuerza un refresco cuando el canal del
+  mensaje no está en la membresía ya conocida, coalescido con
+  `memberChannelsRefreshPromise` para no disparar paginaciones paralelas
+  si llegan varios canales nuevos a la vez.
 - **Filtro opcional de menciones:** si el usuario completa su propio ID de
   Slack (campo opcional en la pantalla de emparejamiento, distinto del
   `botUserId` del bot), `pushChatListOnce()` en `slack.js` deja afuera los

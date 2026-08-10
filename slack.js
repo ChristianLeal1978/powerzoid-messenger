@@ -283,14 +283,28 @@ async function listAllConversations() {
 const MEMBER_CHANNELS_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 let memberChannelsCache = null;
 let memberChannelsFetchedAt = 0;
+// Si ya hay una paginación en curso, todo el mundo espera esa misma
+// promesa en vez de disparar la suya — evita que una ráfaga de mensajes de
+// varios canales nuevos a la vez (ej. te escriben tres personas nuevas
+// seguidas) dispare varias paginaciones completas del workspace en
+// paralelo. Mismo espíritu que el mutex de pushChatList().
+let memberChannelsRefreshPromise = null;
 
 async function getMemberChannels(forceRefresh) {
   const stale = Date.now() - memberChannelsFetchedAt > MEMBER_CHANNELS_REFRESH_COOLDOWN_MS;
   if (memberChannelsCache && !forceRefresh && !stale) return memberChannelsCache;
-  const all = await listAllConversations();
-  memberChannelsCache = all.filter((c) => c.is_im || c.is_mpim || c.is_member);
-  memberChannelsFetchedAt = Date.now();
-  return memberChannelsCache;
+  if (memberChannelsRefreshPromise) return memberChannelsRefreshPromise;
+  memberChannelsRefreshPromise = (async () => {
+    const all = await listAllConversations();
+    memberChannelsCache = all.filter((c) => c.is_im || c.is_mpim || c.is_member);
+    memberChannelsFetchedAt = Date.now();
+    return memberChannelsCache;
+  })();
+  try {
+    return await memberChannelsRefreshPromise;
+  } finally {
+    memberChannelsRefreshPromise = null;
+  }
 }
 
 let pushChatListInFlight = false;
@@ -415,6 +429,13 @@ function wireSocketEvents() {
       mentionsMe: textMentionsUser(event.text, myUserId),
     });
     send('sl:incoming', serialized);
+    // Canal que la membresía cacheada todavía no conoce (ej. primer DM de
+    // alguien nuevo, o recién invitaron al bot a un canal) — forzamos el
+    // refresco ahora en vez de esperar el cooldown de 5 min, si no
+    // aparecería tarde en la lista pese a haber un mensaje nuevo.
+    if (memberChannelsCache && !memberChannelsCache.some((c) => c.id === event.channel)) {
+      await getMemberChannels(true);
+    }
     pushChatList();
   });
 
