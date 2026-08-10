@@ -205,6 +205,55 @@ async function resolveConversationMeta(c) {
   return { name, avatar, lastMessage, timestamp };
 }
 
+// conversations.list devuelve, para canales públicos, TODOS los del
+// workspace (no solo los del bot) — en un workspace grande eso son varias
+// páginas. Sin paginar, los canales a los que el bot sí pertenece pueden
+// quedar fuera de la primera página si hay muchos otros antes en el orden
+// que usa Slack (no es orden de membresía). Techo de páginas como red de
+// seguridad, no un límite pensado para pegarle en uso normal.
+const CONVERSATIONS_LIST_PAGE_SIZE = 200;
+const CONVERSATIONS_LIST_MAX_PAGES = 25; // hasta 5000 canales
+
+async function listAllConversations() {
+  const channels = [];
+  let cursor;
+  let pages = 0;
+  do {
+    const res = await web.conversations.list({
+      types: 'public_channel,private_channel,mpim,im',
+      exclude_archived: true,
+      limit: CONVERSATIONS_LIST_PAGE_SIZE,
+      cursor,
+    });
+    channels.push(...(res.channels || []));
+    cursor = res.response_metadata && res.response_metadata.next_cursor;
+    pages += 1;
+  } while (cursor && pages < CONVERSATIONS_LIST_MAX_PAGES);
+  if (cursor) {
+    console.error('[sl] conversations.list(): se alcanzó el techo de páginas, puede haber canales sin listar.');
+  }
+  return channels;
+}
+
+// La membresía del bot (a qué canales pertenece) cambia poco — solo cuando
+// alguien lo invita o lo saca. Paginar el workspace completo en cada
+// mensaje entrante sería carísimo en un workspace grande, así que se
+// cachea con el mismo criterio de cooldown que ya usa el resto de la app
+// (ver AVATAR_RETRY_COOLDOWN_MS): se refresca solo, como mucho, cada 5
+// minutos, salvo pedido explícito de refresco.
+const MEMBER_CHANNELS_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+let memberChannelsCache = null;
+let memberChannelsFetchedAt = 0;
+
+async function getMemberChannels(forceRefresh) {
+  const stale = Date.now() - memberChannelsFetchedAt > MEMBER_CHANNELS_REFRESH_COOLDOWN_MS;
+  if (memberChannelsCache && !forceRefresh && !stale) return memberChannelsCache;
+  const all = await listAllConversations();
+  memberChannelsCache = all.filter((c) => c.is_im || c.is_mpim || c.is_member);
+  memberChannelsFetchedAt = Date.now();
+  return memberChannelsCache;
+}
+
 let pushChatListInFlight = false;
 let pushChatListQueued = false;
 
@@ -232,12 +281,7 @@ async function pushChatList() {
 async function pushChatListOnce() {
   if (!web) return;
   try {
-    const res = await web.conversations.list({
-      types: 'public_channel,private_channel,mpim,im',
-      exclude_archived: true,
-      limit: 200,
-    });
-    const channels = (res.channels || []).filter((c) => c.is_im || c.is_mpim || c.is_member);
+    const channels = await getMemberChannels();
     const list = await Promise.all(
       channels.slice(0, 60).map(async (c) => {
         const meta = await resolveConversationMeta(c);
