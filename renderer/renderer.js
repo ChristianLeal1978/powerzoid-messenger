@@ -23,6 +23,8 @@ const imageInput = document.getElementById('image-input');
 const imagePreviewEl = document.getElementById('image-preview');
 const imagePreviewImg = document.getElementById('image-preview-img');
 const imagePreviewRemove = document.getElementById('image-preview-remove');
+const lightboxEl = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
@@ -35,6 +37,7 @@ let currentChatIsGroup = false;
 let groupParticipants = [];
 let pendingMentions = new Map(); // id -> nombre, para el envío
 let pendingImage = null; // { base64, mimetype, filename } de la imagen adjunta, antes de enviar
+let reactingToMessageId = null; // id del mensaje al que se está por reaccionar desde el picker de "+"
 let mentionMatches = [];
 let mentionActiveIndex = 0;
 let mentionQueryStart = -1;
@@ -127,6 +130,7 @@ async function openChat(chatId, name) {
   chatReactionAlerts.delete(chatId);
   pendingMentions = new Map();
   clearPendingImage();
+  reactingToMessageId = null;
   hideMentionList();
   emojiPickerEl.classList.add('hidden');
   renderChatList();
@@ -182,6 +186,17 @@ function renderMessage(msg) {
     : escapeHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
   b.innerHTML = `${authorHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
   b.addEventListener('click', () => toggleReactionBar(wrap, msg.id));
+  if (msg.image) {
+    // El click en la imagen abre el modo teatro y no debe además togglear la
+    // barra de reacciones (que está en el listener del bubble, arriba).
+    const imgEl = b.querySelector('.msg-image');
+    if (imgEl) {
+      imgEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openLightbox(msg.image);
+      });
+    }
+  }
   wrap.appendChild(b);
 
   const reactionsEl = document.createElement('div');
@@ -192,6 +207,23 @@ function renderMessage(msg) {
   messagesEl.appendChild(wrap);
   messageElements.set(msg.id, wrap);
 }
+
+// --- Modo teatro: vista ampliada de imágenes ---
+function openLightbox(src) {
+  lightboxImg.src = src;
+  lightboxEl.classList.remove('hidden');
+}
+
+function closeLightbox() {
+  lightboxEl.classList.add('hidden');
+  lightboxImg.src = '';
+}
+
+lightboxEl.addEventListener('click', closeLightbox);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !lightboxEl.classList.contains('hidden')) closeLightbox();
+});
 
 // --- Reacciones ---
 function renderReactions(el, reactions) {
@@ -230,6 +262,20 @@ function toggleReactionBar(wrap, msgId) {
     });
     bar.appendChild(btn);
   });
+  const moreBtn = document.createElement('button');
+  moreBtn.type = 'button';
+  moreBtn.className = 'reaction-more-btn';
+  moreBtn.textContent = '+';
+  moreBtn.setAttribute('aria-label', 'Buscar otro emoji');
+  moreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeReactionBar();
+    reactingToMessageId = msgId;
+    hideMentionList();
+    positionFloatingPanel(emojiPickerEl);
+    emojiPickerEl.classList.remove('hidden');
+  });
+  bar.appendChild(moreBtn);
   wrap.appendChild(bar);
   openReactionBarWrap = wrap;
 }
@@ -470,6 +516,8 @@ const EMOJIS = [
   '🙂', '😉', '😇', '🥳', '😴', '🤗', '😅', '😬', '🙄', '😐',
   '😢', '😭', '😡', '🤯', '😱', '🤷', '🙌', '👏', '👍', '👎',
   '🙏', '💪', '👀', '✅', '❌', '🔥', '✨', '🎉', '❤️', '💀',
+  '😈', '👿', '🤠', '🥲', '🫡', '🤌', '🖤', '💯', '🎊', '🍻',
+  '⚡', '🌟', '🚀', '🎯', '🤙', '😏', '🫶', '🤝', '👋', '🥶',
 ];
 
 function populateEmojiPicker() {
@@ -480,7 +528,14 @@ function populateEmojiPicker() {
     b.textContent = emoji;
     b.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      insertAtCursor(emoji);
+      if (reactingToMessageId) {
+        const msgId = reactingToMessageId;
+        reactingToMessageId = null;
+        emojiPickerEl.classList.add('hidden');
+        window.api.reactToMessage(msgId, emoji);
+      } else {
+        insertAtCursor(emoji);
+      }
     });
     emojiPickerEl.appendChild(b);
   });
@@ -489,6 +544,7 @@ populateEmojiPicker();
 
 emojiBtn.addEventListener('click', () => {
   if (emojiPickerEl.classList.contains('hidden')) {
+    reactingToMessageId = null; // el botón de emojis del composer siempre inserta texto
     hideMentionList();
     positionFloatingPanel(emojiPickerEl);
     emojiPickerEl.classList.remove('hidden');
@@ -504,6 +560,7 @@ document.addEventListener('click', (e) => {
     e.target !== emojiBtn
   ) {
     emojiPickerEl.classList.add('hidden');
+    reactingToMessageId = null;
   }
 });
 

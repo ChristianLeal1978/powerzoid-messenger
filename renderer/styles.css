@@ -27,7 +27,7 @@ html, body {
   -webkit-app-region: drag;
 }
 
-button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-list, .emoji-picker {
+button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-list, .emoji-picker, .lightbox {
   -webkit-app-region: no-drag;
 }
 
@@ -320,6 +320,12 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   cursor: pointer;
 }
 .reaction-bar button:hover { background: var(--bg-hover); }
+.reaction-more-btn {
+  color: var(--text-dim);
+  font-size: 15px !important;
+  font-weight: 600;
+}
+.reaction-more-btn:hover { color: var(--text); }
 
 .composer {
   flex: 0 0 auto;
@@ -416,8 +422,28 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   max-height: 220px;
   border-radius: 8px;
   object-fit: cover;
+  cursor: zoom-in;
 }
 .image-caption { display: block; margin-top: 4px; }
+
+/* --- Vista ampliada de imágenes ("modo teatro") --- */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 10, 0.92);
+  cursor: zoom-out;
+}
+.lightbox img {
+  display: block;
+  max-width: 94%;
+  max-height: 94%;
+  object-fit: contain;
+  border-radius: 6px;
+}
 
 /* --- Menciones y picker de emojis: paneles flotantes sobre el composer --- */
 .mention-list, .emoji-picker {
