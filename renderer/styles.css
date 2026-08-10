@@ -407,9 +407,26 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   display: block;
   font-size: 10.5px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent); /* fallback si no se pudo derivar un color por autor */
   margin-bottom: 2px;
 }
+.attachment-download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.attachment-download-btn:hover { color: var(--text); background: var(--accent-soft); }
 
 /* --- Reacciones --- */
 .reactions {

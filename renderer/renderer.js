@@ -40,6 +40,25 @@ const searchBtn = document.getElementById('search-btn');
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
+// --- Color por persona en grupos/canales ---
+// Paleta separada de --accent/--unread/--danger (que ya tienen significado
+// propio: mío/alerta/error) para no confundir. Se elige de forma
+// determinística por id de autor, así la misma persona siempre tiene el
+// mismo color entre mensajes y al reabrir la conversación.
+const AUTHOR_COLORS = ['#6fa8dc', '#b58fd1', '#5fc9d6', '#e07bb0', '#8888e0', '#c9a86a'];
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+function colorForAuthor(id) {
+  if (!id) return null;
+  return AUTHOR_COLORS[hashString(id) % AUTHOR_COLORS.length];
+}
+
 // --- Multi-proveedor (WhatsApp / Slack) ---
 // Ambos proveedores comparten un único set de DOM para lista de chats +
 // conversación + composer (ver CLAUDE.md). Solo se guarda por proveedor lo
@@ -486,7 +505,10 @@ function renderMessage(msg) {
   // authorName solo viene poblado para mensajes de grupo/canal que no son
   // míos (ver serializeMessage() en whatsapp.js/slack.js) — así identificamos
   // quién escribió qué.
-  const authorHtml = msg.authorName ? `<span class="author">${escapeHtml(msg.authorName)}</span>` : '';
+  const authorColor = colorForAuthor(msg.author);
+  const authorHtml = msg.authorName
+    ? `<span class="author"${authorColor ? ` style="color:${authorColor}"` : ''}>${escapeHtml(msg.authorName)}</span>`
+    : '';
   const bodyHtml = msg.sticker
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
     : msg.image
@@ -504,6 +526,23 @@ function renderMessage(msg) {
         openLightbox(msg.image);
       });
     }
+  }
+  if (msg.hasMedia) {
+    // Cubre también los adjuntos que no se previsualizan acá (video, audio,
+    // documentos — ver el placeholder "📎 Adjunto" arriba): el click pide el
+    // archivo recién ahí, no antes (mismo criterio que ya evita bajar todo
+    // en cada fetchMessages(), ver getMediaDataUri() en whatsapp.js).
+    const downloadBtn = document.createElement('button');
+    downloadBtn.type = 'button';
+    downloadBtn.className = 'attachment-download-btn';
+    downloadBtn.title = 'Descargar adjunto';
+    downloadBtn.setAttribute('aria-label', 'Descargar adjunto');
+    downloadBtn.textContent = '⭳';
+    downloadBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      downloadAttachment(msg);
+    });
+    b.appendChild(downloadBtn);
   }
   wrap.appendChild(b);
 
@@ -532,6 +571,14 @@ lightboxEl.addEventListener('click', closeLightbox);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !lightboxEl.classList.contains('hidden')) closeLightbox();
 });
+
+// --- Descargar adjuntos ---
+async function downloadAttachment(msg) {
+  const res = await activeApi().downloadAttachment(msg.id, selectedChatId);
+  if (!res.ok && !res.canceled) {
+    window.alert('No se pudo descargar el adjunto.');
+  }
+}
 
 // --- Reacciones ---
 function renderReactions(el, reactions) {

@@ -343,6 +343,24 @@ async function reactToMessage({ messageId, emoji }) {
   }
 }
 
+async function downloadAttachment({ messageId }) {
+  try {
+    const msg = await client.getMessageById(messageId);
+    if (!msg || !msg.hasMedia) return { ok: false };
+    const media = await msg.downloadMedia();
+    if (!media) return { ok: false };
+    // whatsapp-web.js no siempre trae filename (sobre todo en fotos/videos
+    // sacados directo desde la cámara) — armamos uno a partir del mimetype
+    // en ese caso.
+    const ext = media.mimetype ? media.mimetype.split('/')[1].split(';')[0] : '';
+    const filename = media.filename || `whatsapp-adjunto-${messageId.slice(-8)}${ext ? `.${ext}` : ''}`;
+    return { ok: true, base64: media.data, mimetype: media.mimetype, filename };
+  } catch (err) {
+    console.error('[wa] downloadAttachment() falló:', err.message || err);
+    return { ok: false };
+  }
+}
+
 async function getGroupParticipants(chatId) {
   try {
     const chat = await client.getChatById(chatId);
@@ -373,4 +391,5 @@ module.exports = {
   sendImage,
   reactToMessage,
   getGroupParticipants,
+  downloadAttachment,
 };

@@ -15,6 +15,7 @@ const wa = {
   getGroupParticipants: (chatId) => ipcRenderer.invoke('wa:getGroupParticipants', chatId),
   reactToMessage: (messageId, emoji, chatId) => ipcRenderer.invoke('wa:reactToMessage', { messageId, emoji, chatId }),
   regenerateQr: () => ipcRenderer.invoke('wa:regenerateQr'),
+  downloadAttachment: (messageId, chatId) => ipcRenderer.invoke('wa:downloadAttachment', { messageId, chatId }),
 };
 
 const sl = {
@@ -33,6 +34,7 @@ const sl = {
   disconnect: () => ipcRenderer.invoke('sl:disconnect'),
   searchUsers: (query) => ipcRenderer.invoke('sl:searchUsers', query),
   openDirectMessage: (userId) => ipcRenderer.invoke('sl:openDirectMessage', userId),
+  downloadAttachment: (messageId, chatId) => ipcRenderer.invoke('sl:downloadAttachment', { messageId, chatId }),
 };
 
 contextBridge.exposeInMainWorld('api', { wa, sl });

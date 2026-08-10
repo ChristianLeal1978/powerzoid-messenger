@@ -98,6 +98,13 @@ function fetchAsDataUri(url, token) {
   });
 }
 
+async function fetchAsBase64(url, token) {
+  const dataUri = await fetchAsDataUri(url, token);
+  if (!dataUri) return null;
+  const idx = dataUri.indexOf(',');
+  return idx === -1 ? null : dataUri.slice(idx + 1);
+}
+
 // Mismo cooldown que AVATAR_RETRY_COOLDOWN_MS en whatsapp.js y por la misma
 // razón: pushChatList() corre en cada mensaje entrante, y sin esto un
 // avatar que falla se reintenta en cada refresco.
@@ -422,19 +429,31 @@ function wireSocketEvents() {
     const event = eventFromArgs(args);
     if (!event || !event.channel) return;
     if (event.subtype === 'message_changed' || event.subtype === 'message_deleted') return;
-    const serialized = await serializeMessage(event, event.channel);
-    lastMessageCache.set(event.channel, {
-      text: serialized.body,
-      ts: serialized.timestamp,
-      mentionsMe: textMentionsUser(event.text, myUserId),
-    });
-    send('sl:incoming', serialized);
-    // Canal que la membresía cacheada todavía no conoce (ej. primer DM de
-    // alguien nuevo, o recién invitaron al bot a un canal) — forzamos el
-    // refresco ahora en vez de esperar el cooldown de 5 min, si no
-    // aparecería tarde en la lista pese a haber un mensaje nuevo.
-    if (memberChannelsCache && !memberChannelsCache.some((c) => c.id === event.channel)) {
-      await getMemberChannels(true);
+    // Cada paso en su propio try/catch: un fallo puntual (ej. rate-limit al
+    // refrescar membresía) no debe cortar el resto del manejo del evento en
+    // silencio — eso dejaba la conversación y/o la lista sin actualizar
+    // hasta el próximo mensaje, en vez de solo perderse ese refresco puntual.
+    try {
+      const serialized = await serializeMessage(event, event.channel);
+      lastMessageCache.set(event.channel, {
+        text: serialized.body,
+        ts: serialized.timestamp,
+        mentionsMe: textMentionsUser(event.text, myUserId),
+      });
+      send('sl:incoming', serialized);
+    } catch (err) {
+      console.error('[sl] no se pudo procesar el mensaje entrante:', err.message || err);
+    }
+    try {
+      // Canal que la membresía cacheada todavía no conoce (ej. primer DM de
+      // alguien nuevo, o recién invitaron al bot a un canal) — forzamos el
+      // refresco ahora en vez de esperar el cooldown de 5 min, si no
+      // aparecería tarde en la lista pese a haber un mensaje nuevo.
+      if (memberChannelsCache && !memberChannelsCache.some((c) => c.id === event.channel)) {
+        await getMemberChannels(true);
+      }
+    } catch (err) {
+      console.error('[sl] no se pudo refrescar la membresía de canales:', err.message || err);
     }
     pushChatList();
   });
@@ -654,6 +673,32 @@ async function reactToMessage({ messageId, emoji, chatId }) {
   }
 }
 
+async function downloadAttachment({ messageId, chatId }) {
+  if (!web || !chatId) return { ok: false };
+  try {
+    const result = await web.conversations.history({
+      channel: chatId,
+      latest: messageId,
+      inclusive: true,
+      limit: 1,
+    });
+    const msg = result.messages && result.messages[0];
+    const file = msg && msg.files && msg.files[0];
+    if (!file || !file.url_private) return { ok: false };
+    const base64 = await fetchAsBase64(file.url_private, botToken);
+    if (!base64) return { ok: false };
+    return {
+      ok: true,
+      base64,
+      mimetype: file.mimetype || 'application/octet-stream',
+      filename: file.name || `slack-adjunto-${messageId}`,
+    };
+  } catch (err) {
+    console.error('[sl] downloadAttachment() falló:', err.message || err);
+    return { ok: false };
+  }
+}
+
 async function getGroupParticipants(channelId) {
   if (!web) return { ok: false, participants: [] };
   try {
@@ -687,4 +732,5 @@ module.exports = {
   getGroupParticipants,
   searchUsers,
   openDirectMessage,
+  downloadAttachment,
 };

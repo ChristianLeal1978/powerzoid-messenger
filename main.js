@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, safeStorage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const whatsapp = require('./whatsapp');
@@ -36,6 +36,22 @@ function createWindow() {
 
 function send(channel, payload) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+}
+
+// --- Descargar adjuntos ---
+// Común a wa:downloadAttachment y sl:downloadAttachment: cada módulo trae
+// el archivo (base64) desde su proveedor; acá solo se pregunta dónde
+// guardarlo y se escribe a disco.
+async function saveAttachmentToDisk(base64, filename) {
+  const { canceled, filePath } = await dialog.showSaveDialog(win, { defaultPath: filename });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+  try {
+    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
+    return { ok: true, path: filePath };
+  } catch (err) {
+    console.error('[main] no se pudo guardar el adjunto:', err.message || err);
+    return { ok: false };
+  }
 }
 
 // --- Credenciales de Slack ---
@@ -89,6 +105,10 @@ ipcMain.handle('wa:sendMessage', (_e, payload) => whatsapp.sendMessage(payload))
 ipcMain.handle('wa:sendImage', (_e, payload) => whatsapp.sendImage(payload));
 ipcMain.handle('wa:reactToMessage', (_e, payload) => whatsapp.reactToMessage(payload));
 ipcMain.handle('wa:getGroupParticipants', (_e, chatId) => whatsapp.getGroupParticipants(chatId));
+ipcMain.handle('wa:downloadAttachment', async (_e, payload) => {
+  const res = await whatsapp.downloadAttachment(payload);
+  return res.ok ? saveAttachmentToDisk(res.base64, res.filename) : res;
+});
 
 // --- IPC: Slack ---
 ipcMain.handle('sl:getMessages', (_e, chatId) => slack.getMessages(chatId));
@@ -98,6 +118,10 @@ ipcMain.handle('sl:reactToMessage', (_e, payload) => slack.reactToMessage(payloa
 ipcMain.handle('sl:getGroupParticipants', (_e, chatId) => slack.getGroupParticipants(chatId));
 ipcMain.handle('sl:searchUsers', (_e, query) => slack.searchUsers(query));
 ipcMain.handle('sl:openDirectMessage', (_e, userId) => slack.openDirectMessage(userId));
+ipcMain.handle('sl:downloadAttachment', async (_e, payload) => {
+  const res = await slack.downloadAttachment(payload);
+  return res.ok ? saveAttachmentToDisk(res.base64, res.filename) : res;
+});
 
 ipcMain.handle('sl:connect', async (_e, { botToken, appToken, myUserId }) => {
   const res = await slack.connect({ botToken, appToken, myUserId });
