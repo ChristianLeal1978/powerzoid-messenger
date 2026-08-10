@@ -69,11 +69,20 @@ callback de OAuth (a diferencia del flujo clásico "Add to Slack").
 ### 1. Crear la app de Slack
 
 Anda a [api.slack.com/apps](https://api.slack.com/apps) → **Create New App**
-→ **From an app manifest** → elige tu workspace → pega este manifiesto:
+→ **From an app manifest** → elige tu workspace → pega este manifiesto.
+
+> Si el editor de Slack marca error en la pestaña YAML (pasa seguido al
+> copiar/pegar: se pierde el guión de la primera línea de una lista), cambia
+> a la pestaña **JSON** y pega la versión JSON de más abajo — es idéntica,
+> pero no depende de la indentación.
 
 ```yaml
 display_information:
   name: WhatsApp Sidebar Bot
+features:
+  bot_user:
+    display_name: WhatsApp Sidebar Bot
+    always_online: false
 oauth_config:
   scopes:
     bot:
@@ -107,8 +116,41 @@ settings:
   token_rotation_enabled: false
 ```
 
-Esto configura de una los scopes del bot, los eventos suscritos y Socket
-Mode. Después de crearla:
+Versión JSON (pestaña **JSON** del editor), mismo contenido:
+
+```json
+{
+  "display_information": { "name": "WhatsApp Sidebar Bot" },
+  "features": {
+    "bot_user": { "display_name": "WhatsApp Sidebar Bot", "always_online": false }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history", "channels:read", "chat:write", "files:read", "files:write",
+        "groups:history", "groups:read", "im:history", "im:read", "mpim:history",
+        "mpim:read", "reactions:read", "reactions:write", "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels", "message.groups", "message.im", "message.mpim",
+        "reaction_added", "reaction_removed"
+      ]
+    },
+    "interactivity": { "is_enabled": false },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
+```
+
+Esto configura de una los scopes del bot, el usuario del bot (`features.bot_user`
+— si falta, Slack rechaza el manifiesto con "OAuth requires bot_user"), los
+eventos suscritos y Socket Mode. Después de crearla:
 
 1. **Install to Workspace** (botón en "OAuth & Permissions" o en el resumen
    de la app) — te va a pedir aprobar los permisos.
