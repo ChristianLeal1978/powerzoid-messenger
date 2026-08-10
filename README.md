@@ -52,6 +52,100 @@ así que no tendrás que volver a escanear en cada inicio.
 > `whatsapp-web.js` descarga Chromium al hacer `npm install` (puede tardar
 > unos minutos la primera vez).
 
+## Pestañas: WhatsApp y Slack
+
+Arriba de todo hay dos pestañas. Comparten toda la interfaz (lista arriba,
+conversación abajo, composer, reacciones, menciones) — lo único que cambia
+es de dónde vienen los datos: `whatsapp.js` (whatsapp-web.js, como siempre)
+o `slack.js` (API real de Slack, ver abajo cómo conectarla).
+
+## Conectar Slack
+
+La pestaña de Slack usa **Socket Mode**: el bot se conecta por WebSocket
+saliente con dos tokens que generas vos mismo al crear la app en Slack — no
+hace falta levantar ningún servidor propio ni configurar un dominio para el
+callback de OAuth (a diferencia del flujo clásico "Add to Slack").
+
+### 1. Crear la app de Slack
+
+Anda a [api.slack.com/apps](https://api.slack.com/apps) → **Create New App**
+→ **From an app manifest** → elige tu workspace → pega este manifiesto:
+
+```yaml
+display_information:
+  name: WhatsApp Sidebar Bot
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - channels:read
+      - chat:write
+      - files:read
+      - files:write
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - mpim:history
+      - mpim:read
+      - reactions:read
+      - reactions:write
+      - users:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+      - reaction_added
+      - reaction_removed
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
+```
+
+Esto configura de una los scopes del bot, los eventos suscritos y Socket
+Mode. Después de crearla:
+
+1. **Install to Workspace** (botón en "OAuth & Permissions" o en el resumen
+   de la app) — te va a pedir aprobar los permisos.
+2. Copia el **Bot User OAuth Token** (empieza con `xoxb-`) desde
+   "OAuth & Permissions".
+3. Anda a "Basic Information" → **App-Level Tokens** → **Generate Token and
+   Scopes** → agrega el scope `connections:write` → genera el token y
+   cópialo (empieza con `xapp-`).
+4. Invita al bot a los canales que quieras ver desde la barra: en Slack,
+   dentro del canal, `/invite @WhatsApp Sidebar Bot` (o el nombre que le
+   hayas puesto). Los mensajes directos no necesitan invitación.
+
+### 2. Emparejar la app
+
+En la barra, cambia a la pestaña Slack y pega ambos tokens (bot token y
+app-level token) en la pantalla de emparejamiento. Quedan guardados
+localmente (cifrados con el keyring del sistema vía `safeStorage` de
+Electron, en `~/.config/whatsapp-sidebar/slack-credentials.json`), así que
+no hay que repetir esto en cada inicio. El engranaje (⚙) junto al buscador,
+visible solo en la pestaña de Slack, permite desconectar y volver a
+emparejar con otros tokens.
+
+### Limitaciones conocidas de la integración de Slack
+
+- **Sin hilos:** los mensajes se postean siempre "planos" al canal, no como
+  respuesta en un hilo. Si alguien responde en un hilo desde Slack, ese
+  mensaje igual aparece en la conversación, pero sin indicar que es una
+  respuesta.
+- **Sin conteo real de no-leídos:** la Web API no expone esto de forma
+  simple para apps de bot. Si llega un mensaje a un canal que no tienes
+  abierto, se muestra el mismo aviso que ya existe para reacciones (un
+  emoji junto al chat en la lista) en vez de un número.
+- **Reacciones:** el picker de emojis de la barra es un set fijo (el mismo
+  que ya usa WhatsApp) mapeado a los shortcodes de Slack más comunes
+  (`slack.js`, `EMOJI_TO_SLACK`) — reaccionar con un emoji fuera de ese set
+  no está soportado desde acá.
+
 ## Problema conocido (agosto 2026): `r: r` al cargar chats o mensajes
 
 Bug real, abierto y activo en `whatsapp-web.js` mismo (no de este proyecto),

@@ -2,6 +2,14 @@ const qrScreen = document.getElementById('qr-screen');
 const qrImg = document.getElementById('qr-img');
 const qrStatus = document.getElementById('qr-status');
 const qrRefreshBtn = document.getElementById('qr-refresh-btn');
+const slackPairingScreen = document.getElementById('slack-pairing-screen');
+const slackPairingForm = document.getElementById('slack-pairing-form');
+const slackBotTokenInput = document.getElementById('slack-bot-token');
+const slackAppTokenInput = document.getElementById('slack-app-token');
+const slackConnectBtn = document.getElementById('slack-connect-btn');
+const slackPairingStatus = document.getElementById('slack-pairing-status');
+const slackDisconnectBtn = document.getElementById('slack-disconnect-btn');
+const tabButtons = document.querySelectorAll('.tab-btn');
 const app = document.getElementById('app');
 const rail = document.getElementById('rail');
 const statusDot = document.getElementById('status-dot');
@@ -31,6 +39,39 @@ const searchBtn = document.getElementById('search-btn');
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
+// --- Multi-proveedor (WhatsApp / Slack) ---
+// Ambos proveedores comparten un único set de DOM para lista de chats +
+// conversación + composer (ver CLAUDE.md). Solo se guarda por proveedor lo
+// que de verdad necesita sobrevivir en segundo plano mientras el otro está
+// a la vista: la lista de chats y el estado de conexión. Todo lo demás
+// (chat abierto, borrador, menciones, imagen adjunta…) describe "la
+// conversación actualmente abierta", que solo puede pertenecer al
+// proveedor activo — cambiar de pestaña la cierra, igual que el botón
+// "volver".
+const PROVIDER_CONFIG = {
+  wa: {
+    label: 'WhatsApp',
+    // WhatsApp reconoce la mención por "@<número>" en el texto (más el id
+    // en `mentions` al enviar); el chat lo muestra como "@Nombre" solo.
+    formatMentionInsert: (p) => `@${p.id.split('@')[0]} `,
+  },
+  sl: {
+    label: 'Slack',
+    // Slack reconoce la mención por "<@ID>" directo en el texto — no hace
+    // falta ningún parámetro aparte al enviar.
+    formatMentionInsert: (p) => `<@${p.id}> `,
+  },
+};
+const providerData = {
+  wa: { chats: [], status: undefined, railState: null, everReady: false },
+  sl: { chats: [], status: undefined, railState: null, everReady: false },
+};
+let activeProvider = 'wa';
+
+function activeApi() {
+  return window.api[activeProvider];
+}
+
 let chats = [];
 let selectedChatId = null;
 const messageElements = new Map(); // msgId -> .bubble-wrap, para reacciones en vivo
@@ -56,16 +97,89 @@ function formatTime(unixSeconds) {
   return d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 }
 
-function setConnectionState(state) {
-  rail.className = 'rail' + (state === 'ready' ? '' : ` ${state}`);
-  statusDot.className = 'dot' + (state === 'ready' ? '' : ` ${state}`);
+function setConnectionState(railState) {
+  const cls = !railState || railState === 'ready' ? '' : ` ${railState}`;
+  rail.className = 'rail' + cls;
+  statusDot.className = 'dot' + cls;
 }
 
-// --- QR / estado ---
-window.api.onQr((dataUrl) => {
+// --- Pantallas: QR (WhatsApp) / emparejamiento (Slack) / app compartida ---
+function renderActiveScreen() {
+  const pd = providerData[activeProvider];
+  topbarTitle.textContent = PROVIDER_CONFIG[activeProvider].label;
+  setConnectionState(pd.railState);
+
+  // Una vez que un proveedor estuvo listo alguna vez, se queda mostrando la
+  // app aunque se caiga la conexión (mismo criterio que ya tenía WhatsApp:
+  // un 'disconnected' solo cambia el color del punto, no oculta la app) —
+  // excepto si el estado es explícitamente 'not-configured' (Slack
+  // desconectado a propósito desde el botón de engranaje).
+  const showApp = pd.status === 'ready' || (pd.everReady && pd.status !== 'not-configured');
+
+  qrScreen.classList.toggle('hidden', !(activeProvider === 'wa' && !showApp));
+  slackPairingScreen.classList.toggle('hidden', !(activeProvider === 'sl' && !showApp));
+  app.classList.toggle('hidden', !showApp);
+  slackDisconnectBtn.classList.toggle('hidden', !(activeProvider === 'sl' && showApp));
+
+  if (activeProvider === 'sl' && !showApp) {
+    slackPairingStatus.textContent = slackStatusMessage(pd.status);
+  }
+
+  if (showApp) {
+    chats = pd.chats;
+    renderChatList();
+  }
+}
+
+function slackStatusMessage(status) {
+  if (status === 'connecting') return 'Conectando…';
+  if (status === 'auth_failure') return 'No se pudo conectar. Revisa los tokens y que Socket Mode esté habilitado.';
+  if (status === 'disconnected') return 'Desconectado. Ingresa los tokens de nuevo.';
+  return '';
+}
+
+function railStateForStatus(status) {
+  if (status === 'ready') return 'ready';
+  if (status === 'disconnected' || status === 'auth_failure') return 'disconnected';
+  return 'reconnecting';
+}
+
+function handleStatus(provider, status) {
+  const pd = providerData[provider];
+  pd.status = status;
+  pd.railState = railStateForStatus(status);
+  if (status === 'ready') pd.everReady = true;
+  if (provider === activeProvider) renderActiveScreen();
+}
+
+function closeConversation() {
+  selectedChatId = null;
+  hideMentionList();
+  emojiPickerEl.classList.add('hidden');
+  convActive.classList.add('hidden');
+  convEmpty.classList.remove('hidden');
+  renderChatList();
+}
+
+function switchProvider(provider) {
+  if (provider === activeProvider) return;
+  closeChatSearch();
+  closeConversation();
+  activeProvider = provider;
+  tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.provider === provider));
+  renderActiveScreen();
+}
+
+tabButtons.forEach((btn) => {
+  btn.addEventListener('click', () => switchProvider(btn.dataset.provider));
+});
+
+// --- QR de WhatsApp ---
+window.api.wa.onQr((dataUrl) => {
   qrImg.src = dataUrl;
   qrStatus.textContent = 'Esperando código…';
-  setConnectionState('reconnecting');
+  providerData.wa.railState = 'reconnecting';
+  if (activeProvider === 'wa') setConnectionState('reconnecting');
   qrRefreshBtn.disabled = false;
   qrRefreshBtn.textContent = 'Generar nuevo código';
 });
@@ -74,33 +188,69 @@ qrRefreshBtn.addEventListener('click', async () => {
   qrRefreshBtn.disabled = true;
   qrRefreshBtn.textContent = 'Generando…';
   qrStatus.textContent = 'Generando nuevo código…';
-  await window.api.regenerateQr();
+  await window.api.wa.regenerateQr();
 });
 
-window.api.onStatus((status) => {
-  if (status === 'ready') {
-    qrScreen.classList.add('hidden');
-    app.classList.remove('hidden');
-    setConnectionState('ready');
-  } else if (status === 'disconnected' || status === 'auth_failure') {
-    setConnectionState('disconnected');
+window.api.wa.onStatus((status) => {
+  handleStatus('wa', status);
+  if (status === 'disconnected' || status === 'auth_failure') {
     qrStatus.textContent = 'Sesión desconectada. Reinicia la app.';
   }
 });
 
-// --- Lista de chats ---
-window.api.onChats((list) => {
-  chats = list;
-  chatListStatus.classList.add('hidden');
-  renderChatList();
+// --- Emparejamiento de Slack ---
+slackPairingForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const botToken = slackBotTokenInput.value.trim();
+  const appToken = slackAppTokenInput.value.trim();
+  if (!botToken || !appToken) return;
+  slackConnectBtn.disabled = true;
+  slackConnectBtn.textContent = 'Conectando…';
+  handleStatus('sl', 'connecting');
+  const res = await window.api.sl.connect(botToken, appToken);
+  slackConnectBtn.disabled = false;
+  slackConnectBtn.textContent = 'Conectar';
+  if (!res.ok) {
+    // El estado definitivo (ready/auth_failure) llega también por
+    // sl:status — esto solo evita dejar el botón colgado si la promesa
+    // tarda.
+    handleStatus('sl', 'auth_failure');
+  }
 });
 
-window.api.onChatsError(({ attempt }) => {
+window.api.sl.onStatus((status) => handleStatus('sl', status));
+
+slackDisconnectBtn.addEventListener('click', async () => {
+  await window.api.sl.disconnect();
+  slackBotTokenInput.value = '';
+  slackAppTokenInput.value = '';
+  providerData.sl.chats = [];
+  providerData.sl.everReady = false;
+  closeConversation();
+});
+
+// --- Lista de chats ---
+function handleChats(provider, list) {
+  providerData[provider].chats = list;
+  if (provider === activeProvider) {
+    chats = list;
+    chatListStatus.classList.add('hidden');
+    renderChatList();
+  }
+}
+window.api.wa.onChats((list) => handleChats('wa', list));
+window.api.sl.onChats((list) => handleChats('sl', list));
+
+function handleChatsError(provider, { attempt }) {
+  if (provider !== activeProvider) return;
   chatListStatus.textContent = `No se pudo cargar la lista de chats (intento ${attempt}). Reintentando…`;
   chatListStatus.classList.remove('hidden');
-});
+}
+window.api.wa.onChatsError((p) => handleChatsError('wa', p));
+window.api.sl.onChatsError((p) => handleChatsError('sl', p));
 
-window.api.onChatsSyncing(({ attempt }) => {
+window.api.wa.onChatsSyncing(({ attempt }) => {
+  if (activeProvider !== 'wa') return;
   chatListStatus.textContent = `Sincronizando chats desde tu teléfono… (intento ${attempt})`;
   chatListStatus.classList.remove('hidden');
 });
@@ -193,23 +343,23 @@ async function openChat(chatId, name) {
   currentChatIsGroup = !!(chatMeta && chatMeta.isGroup);
   groupParticipants = [];
   if (currentChatIsGroup) {
-    window.api.getGroupParticipants(chatId).then((res) => {
+    activeApi().getGroupParticipants(chatId).then((res) => {
       if (res.ok && chatId === selectedChatId) groupParticipants = res.participants;
     });
   }
 
-  const res = await window.api.getMessages(chatId);
+  const res = await activeApi().getMessages(chatId);
   messagesEl.innerHTML = '';
   if (!res.ok) {
-    messagesEl.innerHTML = '<div class="status-text">No se pudieron cargar los mensajes. Puede ser el bug conocido de whatsapp-web.js — revisa el README.</div>';
+    messagesEl.innerHTML = '<div class="status-text">No se pudieron cargar los mensajes.</div>';
     return;
   }
   res.messages.forEach(renderMessage);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  // El proceso principal ya marcó el chat como leído (chat.sendSeen()) al
-  // pedir los mensajes; reflejamos eso de inmediato en la lista en vez de
-  // esperar al próximo pushChatList() (que solo llega con mensajes nuevos).
+  // El proceso principal ya marcó el chat como leído (WhatsApp: chat.sendSeen())
+  // al pedir los mensajes; reflejamos eso de inmediato en la lista en vez de
+  // esperar al próximo refresco (que solo llega con mensajes nuevos).
   const openedChat = chats.find((c) => c.id === chatId);
   if (openedChat && openedChat.unreadCount) {
     openedChat.unreadCount = 0;
@@ -223,8 +373,9 @@ function renderMessage(msg) {
 
   const b = document.createElement('div');
   b.className = 'bubble' + (msg.fromMe ? ' mine' : '') + (msg.sticker ? ' sticker-bubble' : '');
-  // authorName solo viene poblado para mensajes de grupo que no son míos
-  // (ver serializeMessage() en main.js) — así identificamos quién escribió qué.
+  // authorName solo viene poblado para mensajes de grupo/canal que no son
+  // míos (ver serializeMessage() en whatsapp.js/slack.js) — así identificamos
+  // quién escribió qué.
   const authorHtml = msg.authorName ? `<span class="author">${escapeHtml(msg.authorName)}</span>` : '';
   const bodyHtml = msg.sticker
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
@@ -305,7 +456,7 @@ function toggleReactionBar(wrap, msgId) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       closeReactionBar();
-      await window.api.reactToMessage(msgId, emoji);
+      await activeApi().reactToMessage(msgId, emoji, selectedChatId);
     });
     bar.appendChild(btn);
   });
@@ -333,35 +484,34 @@ document.addEventListener('click', (e) => {
   }
 });
 
-window.api.onReactionUpdate(({ messageId, chatId, reactions, emoji }) => {
-  const wrap = messageElements.get(messageId);
-  if (wrap) {
-    const el = wrap.querySelector('.reactions');
-    if (el) renderReactions(el, reactions);
+function handleReactionUpdate(provider, { messageId, chatId, reactions, emoji }) {
+  if (provider === activeProvider) {
+    const wrap = messageElements.get(messageId);
+    if (wrap) {
+      const el = wrap.querySelector('.reactions');
+      if (el) renderReactions(el, reactions);
+    }
   }
   // Si la reacción es de un chat que no tengo abierto, la aviso en la lista
   // en vez de dejarla pasar en silencio (solo mensajes nuevos bumpean hoy).
   if (emoji && chatId && chatId !== selectedChatId) {
     chatReactionAlerts.set(chatId, emoji);
-    renderChatList();
+    if (provider === activeProvider) renderChatList();
   }
-});
+}
+window.api.wa.onReactionUpdate((p) => handleReactionUpdate('wa', p));
+window.api.sl.onReactionUpdate((p) => handleReactionUpdate('sl', p));
 
-window.api.onIncoming((msg) => {
-  if (msg.chatId === selectedChatId) {
+function handleIncoming(provider, msg) {
+  if (provider === activeProvider && msg.chatId === selectedChatId) {
     renderMessage(msg);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
-});
+}
+window.api.wa.onIncoming((msg) => handleIncoming('wa', msg));
+window.api.sl.onIncoming((msg) => handleIncoming('sl', msg));
 
-backBtn.addEventListener('click', () => {
-  selectedChatId = null;
-  hideMentionList();
-  emojiPickerEl.classList.add('hidden');
-  convActive.classList.add('hidden');
-  convEmpty.classList.remove('hidden');
-  renderChatList();
-});
+backBtn.addEventListener('click', closeConversation);
 
 // --- Adjuntar imagen ---
 attachBtn.addEventListener('click', () => imageInput.click());
@@ -401,7 +551,7 @@ composer.addEventListener('submit', async (e) => {
     clearPendingImage();
     autoResizeComposer();
     hideMentionList();
-    const res = await window.api.sendImage(selectedChatId, image.base64, image.mimetype, image.filename, text);
+    const res = await activeApi().sendImage(selectedChatId, image.base64, image.mimetype, image.filename, text);
     if (!res.ok) {
       // no perdemos la imagen ni el texto si falló el envío
       pendingImage = image;
@@ -418,7 +568,7 @@ composer.addEventListener('submit', async (e) => {
   pendingMentions = new Map();
   autoResizeComposer();
   hideMentionList();
-  const res = await window.api.sendMessage(selectedChatId, text, mentions);
+  const res = await activeApi().sendMessage(selectedChatId, text, mentions);
   if (!res.ok) {
     composerInput.value = text; // no perdemos lo escrito si falló el envío
     autoResizeComposer();
@@ -485,7 +635,7 @@ function insertAtCursor(str) {
   autoResizeComposer();
 }
 
-// --- Menciones (@) en grupos ---
+// --- Menciones (@) en grupos/canales ---
 function getMentionQuery() {
   const cursor = composerInput.selectionStart;
   const text = composerInput.value.slice(0, cursor);
@@ -545,9 +695,7 @@ function selectMention(participant) {
   const cursor = composerInput.selectionStart;
   const before = text.slice(0, mentionQueryStart);
   const after = text.slice(cursor);
-  // WhatsApp reconoce la mención por "@<número>" en el texto + el id en
-  // `mentions`; el cliente receptor la muestra como "@Nombre" solo.
-  const inserted = `@${participant.id.split('@')[0]} `;
+  const inserted = PROVIDER_CONFIG[activeProvider].formatMentionInsert(participant);
   composerInput.value = before + inserted + after;
   const newCursor = before.length + inserted.length;
   composerInput.setSelectionRange(newCursor, newCursor);
@@ -579,7 +727,7 @@ function populateEmojiPicker() {
         const msgId = reactingToMessageId;
         reactingToMessageId = null;
         emojiPickerEl.classList.add('hidden');
-        window.api.reactToMessage(msgId, emoji);
+        activeApi().reactToMessage(msgId, emoji, selectedChatId);
       } else {
         insertAtCursor(emoji);
       }

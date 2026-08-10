@@ -47,6 +47,39 @@ Se mantiene además el workaround del lado nuestro: `serializeMessage()` en
 chatId de `msg.from`/`msg.to`, que ya vienen sin necesitar otra consulta al
 Store.
 
+## Pestaña de Slack (agregada 2026-08-10)
+
+Segunda pestaña arriba de todo, repite la misma figura de WhatsApp (lista
+arriba, conversación abajo) sobre datos reales de Slack — no es una
+maqueta. `main.js` quedó como orquestador delgado; la lógica de cada
+proveedor vive en `whatsapp.js` y `slack.js`, ambos con la misma interfaz
+(`init`, `getMessages`, `sendMessage`, `sendImage`, `reactToMessage`,
+`getGroupParticipants`) y ambos normalizando sus mensajes/chats a la misma
+forma genérica, para que `renderer/renderer.js` no necesite saber cuál de
+los dos está activo salvo en un puñado de puntos (título, mapeo de
+menciones, qué `window.api.*` llamar).
+
+- **Conexión:** Socket Mode (`@slack/socket-mode` + `@slack/web-api`), no
+  OAuth con redirect — el usuario genera un bot token (`xoxb-`) y un
+  app-level token (`xapp-`) a mano siguiendo el manifiesto en README.md,
+  sección "Conectar Slack", y los pega en la pantalla de emparejamiento
+  (equivalente al QR de WhatsApp).
+- **Credenciales:** guardadas en `~/.config/whatsapp-sidebar/slack-credentials.json`,
+  cifradas con `safeStorage` de Electron cuando el keyring del sistema está
+  disponible; si no, caen a texto plano con una advertencia en consola
+  (`main.js`, `saveSlackCredentials()`) — no bloquea el arranque.
+- **Limitaciones conocidas, no bugs a "arreglar" sin avisar primero:** sin
+  hilos (todo se postea plano al canal), sin conteo real de no-leídos (la
+  Web API no lo expone simple para bots — se usa el mismo aviso de
+  reacciones para no dejarlo pasar en silencio), y el picker de reacciones
+  solo cubre el set fijo de emojis que ya usaba WhatsApp (mapeado a
+  shortcodes de Slack en `slack.js`, `EMOJI_TO_SLACK`) — reaccionar con
+  otro emoji no está soportado desde acá.
+- Igual que con whatsapp-web.js: aplica el mismo criterio de mutex/cooldown
+  en `pushChatList()`/`getAvatar()` de `slack.js` que ya existía para
+  WhatsApp (ver comentarios ahí) — Slack también rate-limita por método, y
+  Socket Mode dispara un evento por mensaje.
+
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho
    el 2026-08-07: en GNOME/Wayland vía XWayland, la ventana queda en x=0,

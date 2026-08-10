@@ -12,7 +12,12 @@
 <body>
   <div class="rail" id="rail"></div>
 
-  <!-- Pantalla de emparejamiento por QR -->
+  <div class="tab-bar" id="tab-bar">
+    <button type="button" class="tab-btn active" data-provider="wa">WhatsApp</button>
+    <button type="button" class="tab-btn" data-provider="sl">Slack</button>
+  </div>
+
+  <!-- Pantalla de emparejamiento por QR (WhatsApp) -->
   <div id="qr-screen" class="screen">
     <div class="qr-card">
       <div class="brand">WhatsApp<span>Sidebar</span></div>
@@ -23,12 +28,33 @@
     </div>
   </div>
 
-  <!-- App principal -->
+  <!-- Pantalla de emparejamiento de Slack -->
+  <div id="slack-pairing-screen" class="screen hidden">
+    <div class="qr-card">
+      <div class="brand">Slack<span>Sidebar</span></div>
+      <p class="hint">Pega los tokens del bot de Slack.<br />Ver README, sección "Conectar Slack".</p>
+      <form id="slack-pairing-form" class="slack-pairing-form">
+        <label class="slack-field">
+          <span>Bot User OAuth Token</span>
+          <input type="password" id="slack-bot-token" placeholder="xoxb-…" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="slack-field">
+          <span>App-Level Token</span>
+          <input type="password" id="slack-app-token" placeholder="xapp-…" autocomplete="off" spellcheck="false" />
+        </label>
+        <button type="submit" id="slack-connect-btn" class="qr-refresh-btn">Conectar</button>
+      </form>
+      <p class="status-text" id="slack-pairing-status"></p>
+    </div>
+  </div>
+
+  <!-- App principal (compartida por WhatsApp y Slack) -->
   <div id="app" class="screen hidden">
     <header class="topbar">
       <span class="dot" id="status-dot"></span>
       <span class="topbar-title" id="topbar-title">WhatsApp</span>
       <input type="text" id="chat-search-input" class="chat-search-input hidden" placeholder="Buscar persona o grupo…" />
+      <button type="button" id="slack-disconnect-btn" class="search-btn hidden" aria-label="Desconectar Slack" title="Cambiar credenciales de Slack">&#9881;</button>
       <button type="button" id="search-btn" class="search-btn" aria-label="Buscar chats">&#128269;</button>
     </header>
 

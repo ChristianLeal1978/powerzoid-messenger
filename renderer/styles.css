@@ -12,6 +12,8 @@
 
   --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --tabbar-h: 34px;
 }
 
 * { box-sizing: border-box; }
@@ -46,15 +48,39 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
 
 .screen {
   position: absolute;
-  inset: 0;
+  inset: var(--tabbar-h) 0 0 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);
 }
 .hidden { display: none !important; }
 
+/* --- Barra de pestañas (WhatsApp / Slack) --- */
+.tab-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--tabbar-h);
+  display: flex;
+  z-index: 40;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+  flex: 1 1 50%;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.tab-btn:hover { color: var(--text); background: var(--bg-hover); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+
 /* --- Pantalla QR --- */
-#qr-screen {
+#qr-screen, #slack-pairing-screen {
   align-items: center;
   justify-content: center;
   padding: 24px;
@@ -100,6 +126,35 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
 }
 .qr-refresh-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
 .qr-refresh-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* --- Pantalla de emparejamiento de Slack --- */
+.slack-pairing-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  text-align: left;
+  width: 220px;
+}
+.slack-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.slack-field input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 9px;
+  outline: none;
+}
+.slack-field input:focus { border-color: var(--accent); }
+.slack-pairing-form .qr-refresh-btn { margin-top: 2px; width: 100%; }
 
 /* --- Barra superior --- */
 .topbar {
