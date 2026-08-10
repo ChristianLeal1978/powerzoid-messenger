@@ -25,6 +25,9 @@ const imagePreviewImg = document.getElementById('image-preview-img');
 const imagePreviewRemove = document.getElementById('image-preview-remove');
 const lightboxEl = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
+const topbarTitle = document.getElementById('topbar-title');
+const chatSearchInput = document.getElementById('chat-search-input');
+const searchBtn = document.getElementById('search-btn');
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
@@ -38,6 +41,7 @@ let groupParticipants = [];
 let pendingMentions = new Map(); // id -> nombre, para el envío
 let pendingImage = null; // { base64, mimetype, filename } de la imagen adjunta, antes de enviar
 let reactingToMessageId = null; // id del mensaje al que se está por reaccionar desde el picker de "+"
+let chatSearchQuery = ''; // filtro en vivo sobre nombre/último mensaje de la lista de chats
 let mentionMatches = [];
 let mentionActiveIndex = 0;
 let mentionQueryStart = -1;
@@ -103,7 +107,20 @@ window.api.onChatsSyncing(({ attempt }) => {
 
 function renderChatList() {
   chatListEl.innerHTML = '';
-  chats.forEach((c) => {
+  const q = chatSearchQuery.trim().toLowerCase();
+  const list = q
+    ? chats.filter(
+        (c) => c.name.toLowerCase().includes(q) || (c.lastMessage || '').toLowerCase().includes(q)
+      )
+    : chats;
+  if (q && !list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'chat-search-empty';
+    empty.textContent = 'Sin resultados';
+    chatListEl.appendChild(empty);
+    return;
+  }
+  list.forEach((c) => {
     const row = document.createElement('div');
     row.className = 'chat-row' + (c.id === selectedChatId ? ' active' : '');
     const avatarHtml = c.avatar ? `<img src="${c.avatar}" alt="" />` : initials(c.name);
@@ -123,6 +140,40 @@ function renderChatList() {
     chatListEl.appendChild(row);
   });
 }
+
+// --- Buscador de chats ---
+function openChatSearch() {
+  topbarTitle.classList.add('hidden');
+  chatSearchInput.classList.remove('hidden');
+  searchBtn.classList.add('active');
+  chatSearchInput.focus();
+}
+
+function closeChatSearch() {
+  topbarTitle.classList.remove('hidden');
+  chatSearchInput.classList.add('hidden');
+  searchBtn.classList.remove('active');
+  chatSearchInput.value = '';
+  chatSearchQuery = '';
+  renderChatList();
+}
+
+searchBtn.addEventListener('click', () => {
+  if (chatSearchInput.classList.contains('hidden')) {
+    openChatSearch();
+  } else {
+    closeChatSearch();
+  }
+});
+
+chatSearchInput.addEventListener('input', () => {
+  chatSearchQuery = chatSearchInput.value;
+  renderChatList();
+});
+
+chatSearchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeChatSearch();
+});
 
 // --- Conversación activa ---
 async function openChat(chatId, name) {
