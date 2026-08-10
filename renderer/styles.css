@@ -366,6 +366,58 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   cursor: pointer;
 }
 .emoji-btn:hover { background: var(--bg-hover); color: var(--text); }
+.attach-btn {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+.attach-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+/* --- Previsualización de imagen adjunta, sobre el composer --- */
+.image-preview {
+  flex: 0 0 auto;
+  position: relative;
+  width: fit-content;
+  margin: 8px 10px 0;
+}
+.image-preview img {
+  display: block;
+  max-width: 96px;
+  max-height: 96px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+.image-preview-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #1a0906;
+  border: none;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* --- Imágenes dentro de burbujas de mensaje --- */
+.msg-image {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.image-caption { display: block; margin-top: 4px; }
 
 /* --- Menciones y picker de emojis: paneles flotantes sobre el composer --- */
 .mention-list, .emoji-picker {

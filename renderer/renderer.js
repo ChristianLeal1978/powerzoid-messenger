@@ -18,6 +18,11 @@ const divider = document.getElementById('divider');
 const mentionListEl = document.getElementById('mention-list');
 const emojiPickerEl = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
+const attachBtn = document.getElementById('attach-btn');
+const imageInput = document.getElementById('image-input');
+const imagePreviewEl = document.getElementById('image-preview');
+const imagePreviewImg = document.getElementById('image-preview-img');
+const imagePreviewRemove = document.getElementById('image-preview-remove');
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
@@ -29,6 +34,7 @@ let openReactionBarWrap = null;
 let currentChatIsGroup = false;
 let groupParticipants = [];
 let pendingMentions = new Map(); // id -> nombre, para el envío
+let pendingImage = null; // { base64, mimetype, filename } de la imagen adjunta, antes de enviar
 let mentionMatches = [];
 let mentionActiveIndex = 0;
 let mentionQueryStart = -1;
@@ -120,6 +126,7 @@ async function openChat(chatId, name) {
   selectedChatId = chatId;
   chatReactionAlerts.delete(chatId);
   pendingMentions = new Map();
+  clearPendingImage();
   hideMentionList();
   emojiPickerEl.classList.add('hidden');
   renderChatList();
@@ -170,6 +177,8 @@ function renderMessage(msg) {
   const authorHtml = msg.authorName ? `<span class="author">${escapeHtml(msg.authorName)}</span>` : '';
   const bodyHtml = msg.sticker
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
+    : msg.image
+    ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${escapeHtml(msg.body)}</span>` : ''}`
     : escapeHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
   b.innerHTML = `${authorHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
   b.addEventListener('click', () => toggleReactionBar(wrap, msg.id));
@@ -261,10 +270,56 @@ backBtn.addEventListener('click', () => {
   renderChatList();
 });
 
+// --- Adjuntar imagen ---
+attachBtn.addEventListener('click', () => imageInput.click());
+
+imageInput.addEventListener('change', () => {
+  const file = imageInput.files[0];
+  imageInput.value = ''; // permite reelegir el mismo archivo después de quitarlo
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    pendingImage = { base64: dataUrl.split(',')[1], mimetype: file.type, filename: file.name };
+    imagePreviewImg.src = dataUrl;
+    imagePreviewEl.classList.remove('hidden');
+    composerInput.focus();
+  };
+  reader.readAsDataURL(file);
+});
+
+function clearPendingImage() {
+  pendingImage = null;
+  imagePreviewImg.src = '';
+  imagePreviewEl.classList.add('hidden');
+}
+
+imagePreviewRemove.addEventListener('click', clearPendingImage);
+
 composer.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = composerInput.value.trim();
-  if (!text || !selectedChatId) return;
+  if (!selectedChatId || (!text && !pendingImage)) return;
+
+  if (pendingImage) {
+    const image = pendingImage;
+    composerInput.value = '';
+    pendingMentions = new Map();
+    clearPendingImage();
+    autoResizeComposer();
+    hideMentionList();
+    const res = await window.api.sendImage(selectedChatId, image.base64, image.mimetype, image.filename, text);
+    if (!res.ok) {
+      // no perdemos la imagen ni el texto si falló el envío
+      pendingImage = image;
+      imagePreviewImg.src = `data:${image.mimetype};base64,${image.base64}`;
+      imagePreviewEl.classList.remove('hidden');
+      composerInput.value = text;
+      autoResizeComposer();
+    }
+    return;
+  }
+
   const mentions = Array.from(pendingMentions.keys());
   composerInput.value = '';
   pendingMentions = new Map();

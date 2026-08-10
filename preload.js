@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('api', {
   onReactionUpdate: (cb) => ipcRenderer.on('wa:reactionUpdate', (_e, payload) => cb(payload)),
   getMessages: (chatId) => ipcRenderer.invoke('wa:getMessages', chatId),
   sendMessage: (chatId, text, mentions) => ipcRenderer.invoke('wa:sendMessage', { chatId, text, mentions }),
+  sendImage: (chatId, base64, mimetype, filename, caption) =>
+    ipcRenderer.invoke('wa:sendImage', { chatId, base64, mimetype, filename, caption }),
   getGroupParticipants: (chatId) => ipcRenderer.invoke('wa:getGroupParticipants', chatId),
   reactToMessage: (messageId, emoji) => ipcRenderer.invoke('wa:reactToMessage', { messageId, emoji }),
   regenerateQr: () => ipcRenderer.invoke('wa:regenerateQr'),

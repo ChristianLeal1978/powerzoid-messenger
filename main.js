@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const https = require('https');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 
 const WINDOW_WIDTH = 340; // ancho de la barra lateral. Ajusta a gusto.
@@ -118,8 +118,13 @@ function normalizeId(id) {
   return id._serialized || id.$1 || null;
 }
 
-async function getStickerDataUri(msg) {
-  if (msg.type !== 'sticker' || !msg.hasMedia) return null;
+// Igual que con los stickers: bajamos el contenido inline solo para los
+// tipos livianos que queremos previsualizar (sticker, imagen). Video/audio/
+// documentos se quedan en el placeholder "📎 Adjunto" — descargarlos todos
+// en cada fetchMessages() sería el mismo tipo de martillazo a Puppeteer que
+// causó los picos de CPU documentados en pushChatList().
+async function getMediaDataUri(msg) {
+  if (!msg.hasMedia || (msg.type !== 'sticker' && msg.type !== 'image')) return null;
   try {
     const media = await msg.downloadMedia();
     return media ? `data:${media.mimetype};base64,${media.data}` : null;
@@ -163,6 +168,7 @@ async function serializeMessage(msg) {
   // al Store (client.getChatById) que hoy está rota en whatsapp-web.js (ver
   // README, sección "Problema conocido"). El chatId ya viene en el propio
   // mensaje sin necesidad de esa consulta extra.
+  const mediaDataUri = await getMediaDataUri(msg);
   return {
     id: msg.id._serialized,
     chatId: msg.fromMe ? msg.to : msg.from,
@@ -176,7 +182,8 @@ async function serializeMessage(msg) {
     authorName: msg.author && !msg.fromMe ? await getContactName(msg.author) : null,
     hasMedia: msg.hasMedia,
     type: msg.type,
-    sticker: await getStickerDataUri(msg),
+    sticker: msg.type === 'sticker' ? mediaDataUri : null,
+    image: msg.type === 'image' ? mediaDataUri : null,
     reactions: await getReactionsSummary(msg),
   };
 }
@@ -347,6 +354,17 @@ ipcMain.handle('wa:sendMessage', async (_e, { chatId, text, mentions }) => {
     return { ok: true };
   } catch (err) {
     console.error('[wa] sendMessage() falló:', err.message || err);
+    return { ok: false };
+  }
+});
+
+ipcMain.handle('wa:sendImage', async (_e, { chatId, base64, mimetype, filename, caption }) => {
+  try {
+    const media = new MessageMedia(mimetype, base64, filename);
+    await client.sendMessage(chatId, media, caption ? { caption } : {});
+    return { ok: true };
+  } catch (err) {
+    console.error('[wa] sendImage() falló:', err.message || err);
     return { ok: false };
   }
 });
