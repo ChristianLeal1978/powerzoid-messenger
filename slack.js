@@ -186,18 +186,45 @@ async function serializeMessage(msg, channelId) {
 // una vez, la primera vez que vemos ese canal.
 const lastMessageCache = new Map();
 
+// Presencia (online/away) de contactos de DM. Cambia mucho más seguido que
+// el nombre/avatar/membresía, así que el cooldown es bastante más corto que
+// el resto de los cachés de este archivo — igual evita pedirla de nuevo en
+// cada refresco disparado por un mensaje entrante.
+const PRESENCE_REFRESH_COOLDOWN_MS = 30 * 1000;
+const presenceCache = new Map(); // userId -> { online, fetchedAt }
+
+async function getPresence(userId) {
+  if (!userId) return null;
+  const cached = presenceCache.get(userId);
+  if (cached && Date.now() - cached.fetchedAt < PRESENCE_REFRESH_COOLDOWN_MS) return cached.online;
+  let online = null;
+  try {
+    const res = await web.users.getPresence({ user: userId });
+    online = res.presence === 'active';
+  } catch (err) {
+    // Sin datos de presencia disponibles — no mostramos el punto en vez de
+    // reintentar en cada refresco.
+  }
+  presenceCache.set(userId, { online, fetchedAt: Date.now() });
+  return online;
+}
+
 async function resolveConversationMeta(c) {
   let name;
   let avatar = null;
+  let online = null;
   if (c.is_im) {
     const info = await getUserInfo(c.user);
     name = info.name;
     avatar = await getAvatar(c.user, info.avatarUrl);
+    online = await getPresence(c.user);
   } else {
     name = c.name || c.id;
   }
   const cached = lastMessageCache.get(c.id);
-  if (cached) return { name, avatar, lastMessage: cached.text, timestamp: cached.ts, mentionsMe: cached.mentionsMe };
+  if (cached) {
+    return { name, avatar, lastMessage: cached.text, timestamp: cached.ts, mentionsMe: cached.mentionsMe, online };
+  }
   let lastMessage = '';
   let timestamp = 0;
   let mentionsMe = false;
@@ -214,7 +241,7 @@ async function resolveConversationMeta(c) {
     // Canal sin historial accesible (el bot no es miembro todavía, etc.) —
     // se deja vacío en vez de reintentar en cada refresco.
   }
-  return { name, avatar, lastMessage, timestamp, mentionsMe };
+  return { name, avatar, lastMessage, timestamp, mentionsMe, online };
 }
 
 // conversations.list devuelve, para canales públicos, TODOS los del
@@ -314,6 +341,9 @@ async function pushChatListOnce() {
       lastMessage: meta.lastMessage,
       timestamp: meta.timestamp,
       avatar: meta.avatar,
+      // Solo tiene sentido para DMs (un canal no tiene un único "usuario");
+      // resolveConversationMeta() lo deja en null para el resto.
+      online: meta.online,
     }));
     list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     send('sl:chats', list);
@@ -541,6 +571,7 @@ function disconnect() {
   userInfoCache.clear();
   avatarCache.clear();
   avatarFailedAt.clear();
+  presenceCache.clear();
   memberChannelsCache = null;
   memberChannelsFetchedAt = 0;
   userDirectoryCache = null;

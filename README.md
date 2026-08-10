@@ -183,6 +183,12 @@ Slack: tu foto de perfil → **"Ver perfil completo"** → **"Más"** → **"Cop
 ID de miembro"** (algo como `U0123456789`). Si lo dejas vacío, se muestran
 todos los canales del bot sin filtrar, como hasta ahora.
 
+**Presencia (online/away):** los DMs muestran un punto verde sobre el
+avatar cuando la otra persona está conectada (`users.getPresence`, mismo
+scope `users:read` que ya tenía la app). No aplica a canales — no tienen
+un único usuario. Se refresca cada 30 segundos como mucho, así que puede
+tardar un rato en reflejar un cambio reciente.
+
 ### Limitaciones conocidas de la integración de Slack
 
 - **Sin hilos:** los mensajes se postean siempre "planos" al canal, no como

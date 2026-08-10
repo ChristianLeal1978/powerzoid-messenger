@@ -78,6 +78,15 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
 }
 .tab-btn:hover { color: var(--text); background: var(--bg-hover); }
 .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--unread);
+  margin-left: 6px;
+  vertical-align: middle;
+}
 
 /* --- Pantalla QR --- */
 #qr-screen, #slack-pairing-screen {
@@ -245,8 +254,11 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   background: var(--accent-soft);
   border-left-color: var(--accent);
 }
-.avatar {
+.avatar-wrap {
   flex: 0 0 auto;
+  position: relative;
+}
+.avatar {
   width: 34px; height: 34px;
   border-radius: 50%;
   background: var(--bg-elevated);
@@ -257,6 +269,20 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   overflow: hidden;
 }
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
+/* Punto de presencia de Slack (online/away) sobre el avatar de un DM. Vive
+   fuera de .avatar a propósito: ese contenedor tiene overflow:hidden para
+   recortar la foto en círculo, y recortaría el punto también si estuviera
+   adentro. */
+.presence-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+}
 .chat-meta { flex: 1 1 auto; min-width: 0; }
 .chat-name {
   font-size: 13px;

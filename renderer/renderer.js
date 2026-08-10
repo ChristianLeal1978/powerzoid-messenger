@@ -64,8 +64,8 @@ const PROVIDER_CONFIG = {
   },
 };
 const providerData = {
-  wa: { chats: [], status: undefined, railState: null, everReady: false },
-  sl: { chats: [], status: undefined, railState: null, everReady: false },
+  wa: { chats: [], status: undefined, railState: null, everReady: false, hasUnseenActivity: false },
+  sl: { chats: [], status: undefined, railState: null, everReady: false, hasUnseenActivity: false },
 };
 let activeProvider = 'wa';
 
@@ -162,12 +162,24 @@ function closeConversation() {
   renderChatList();
 }
 
+// Punto amarillo en la pestaña: avisa que llegó un mensaje al proveedor que
+// no estás mirando ahora mismo (ej. te escriben por WhatsApp mientras
+// tienes abierta la pestaña de Slack). Se apaga al cambiar a esa pestaña.
+function updateTabDots() {
+  tabButtons.forEach((btn) => {
+    const dot = btn.querySelector('.tab-dot');
+    if (dot) dot.classList.toggle('hidden', !providerData[btn.dataset.provider].hasUnseenActivity);
+  });
+}
+
 function switchProvider(provider) {
   if (provider === activeProvider) return;
   closeChatSearch();
   closeConversation();
   activeProvider = provider;
+  providerData[provider].hasUnseenActivity = false;
   tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.provider === provider));
+  updateTabDots();
   renderActiveScreen();
 }
 
@@ -223,6 +235,8 @@ slackPairingForm.addEventListener('submit', async (e) => {
 window.api.sl.onStatus((status) => handleStatus('sl', status));
 
 slackDisconnectBtn.addEventListener('click', async () => {
+  const confirmed = window.confirm('¿Desconectar Slack? Vas a tener que volver a pegar los tokens para reconectar.');
+  if (!confirmed) return;
   await window.api.sl.disconnect();
   slackBotTokenInput.value = '';
   slackAppTokenInput.value = '';
@@ -272,8 +286,14 @@ function renderChatList() {
       const row = document.createElement('div');
       row.className = 'chat-row' + (c.id === selectedChatId ? ' active' : '');
       const avatarHtml = c.avatar ? `<img src="${c.avatar}" alt="" />` : initials(c.name);
+      // c.online solo viene poblado para DMs de Slack (ver resolveConversationMeta()
+      // en slack.js) — WhatsApp y los canales de Slack no tienen "un" usuario.
+      const presenceDotHtml = c.online ? '<span class="presence-dot" title="Conectado"></span>' : '';
       row.innerHTML = `
-        <div class="avatar">${avatarHtml}</div>
+        <div class="avatar-wrap">
+          <div class="avatar">${avatarHtml}</div>
+          ${presenceDotHtml}
+        </div>
         <div class="chat-meta">
           <div class="chat-name">${escapeHtml(c.name)}</div>
           <div class="chat-snippet">${escapeHtml(c.lastMessage || '')}</div>
@@ -593,9 +613,14 @@ window.api.wa.onReactionUpdate((p) => handleReactionUpdate('wa', p));
 window.api.sl.onReactionUpdate((p) => handleReactionUpdate('sl', p));
 
 function handleIncoming(provider, msg) {
-  if (provider === activeProvider && msg.chatId === selectedChatId) {
-    renderMessage(msg);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (provider === activeProvider) {
+    if (msg.chatId === selectedChatId) {
+      renderMessage(msg);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+  } else {
+    providerData[provider].hasUnseenActivity = true;
+    updateTabDots();
   }
 }
 window.api.wa.onIncoming((msg) => handleIncoming('wa', msg));
