@@ -108,11 +108,7 @@ window.api.onChatsSyncing(({ attempt }) => {
 function renderChatList() {
   chatListEl.innerHTML = '';
   const q = chatSearchQuery.trim().toLowerCase();
-  const list = q
-    ? chats.filter(
-        (c) => c.name.toLowerCase().includes(q) || (c.lastMessage || '').toLowerCase().includes(q)
-      )
-    : chats;
+  const list = q ? chats.filter((c) => c.name.toLowerCase().includes(q)) : chats;
   if (q && !list.length) {
     const empty = document.createElement('div');
     empty.className = 'chat-search-empty';
