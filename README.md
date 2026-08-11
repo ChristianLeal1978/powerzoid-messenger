@@ -258,11 +258,12 @@ Si notas que la ventana no queda pegada al borde:
 - O inicia sesión en **GNOME on Xorg** (selector de sesión en la pantalla de
   login) — ahí el posicionamiento es 100% confiable.
 
-**Una limitación real:** esta primera versión deja la ventana *encima* de
-otras (`alwaysOnTop`), pero no reserva el espacio como lo hace un panel/dock
-real (para que otras ventanas no se superpongan). Eso requiere hablarle a las
-hints `_NET_WM_STRUT_PARTIAL` de X11, que Electron no expone de forma nativa.
-Es un paso 2 razonable si te sirve el resultado de esta primera versión: se
+**Una limitación real:** esta primera versión no reserva el espacio como lo
+hace un panel/dock real (para que otras ventanas no se superpongan) — se
+apila como cualquier ventana normal, así que otras ventanas la pueden tapar
+y viceversa. Reservar el espacio requiere hablarle a las hints
+`_NET_WM_STRUT_PARTIAL` de X11, que Electron no expone de forma nativa. Es
+un paso 2 razonable si te sirve el resultado de esta primera versión: se
 puede resolver con un pequeño binario auxiliar en C o con `xdotool`/`wmctrl`
 después de crear la ventana.
 
@@ -329,4 +330,11 @@ Actividades de GNOME. Esto ya se hizo en esta máquina.
 - Reservar espacio en pantalla como un panel real (ver nota de Wayland/X11).
 - Notificaciones de escritorio nativas al llegar un mensaje.
 - Envío/recepción de imágenes y notas de voz (hoy solo texto).
-- Atajo de teclado global para mostrar/ocultar la barra.
+
+## Atajos de teclado
+
+- `Control+Alt+W`: muestra u oculta la barra. Es un atajo global (funciona
+  aunque la ventana no tenga el foco), registrado en `main.js` vía
+  `globalShortcut` — necesario porque la ventana tiene `skipTaskbar: true`
+  y no aparece en el dock/taskbar, así que sin esto no habría forma de
+  volver a mostrarla una vez oculta.

@@ -1,10 +1,14 @@
-const { app, BrowserWindow, ipcMain, screen, safeStorage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, safeStorage, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const whatsapp = require('./whatsapp');
 const slack = require('./slack');
 
 const WINDOW_WIDTH = 340; // ancho de la barra lateral. Ajusta a gusto.
+
+// skipTaskbar la deja sin ícono en el dock/taskbar, así que sin este atajo
+// no habría forma de traerla de vuelta después de ocultarla.
+const TOGGLE_VISIBILITY_SHORTCUT = 'Control+Alt+W';
 
 let win;
 
@@ -20,10 +24,10 @@ function createWindow() {
     maxWidth: 480,
     frame: false,
     resizable: true,
-    alwaysOnTop: true,
     skipTaskbar: true,
     backgroundColor: '#12181b',
     title: 'WhatsApp Sidebar',
+    icon: path.join(__dirname, 'assets', 'icon-512.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -32,6 +36,15 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+}
+
+function toggleVisibility() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isVisible()) {
+    win.hide();
+  } else {
+    win.show();
+  }
 }
 
 function send(channel, payload) {
@@ -147,6 +160,11 @@ app.whenReady().then(() => {
   whatsapp.init(send);
   slack.init(send);
 
+  const registered = globalShortcut.register(TOGGLE_VISIBILITY_SHORTCUT, toggleVisibility);
+  if (!registered) {
+    console.error(`[main] no se pudo registrar el atajo global ${TOGGLE_VISIBILITY_SHORTCUT} (¿ya está tomado por otra app?)`);
+  }
+
   // Esperamos a que el renderer termine de cargar (y registre sus
   // listeners onStatus) antes de mandar el primer estado de Slack — a
   // diferencia de WhatsApp (cuyo 'ready' tarda varios segundos por el
@@ -169,3 +187,4 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => app.quit());
+app.on('will-quit', () => globalShortcut.unregisterAll());
