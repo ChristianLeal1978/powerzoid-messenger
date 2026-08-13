@@ -145,6 +145,18 @@ menciones, qué `window.api.*` llamar).
      los nombres reales de los participantes (vía `conversations.members`
      + `getUserInfo()`, cacheado en `mpimNameCache`) — solo importa ahora
      para los mpim que sí entran por actividad en vivo, no para los 725.
+  5. Con el tope puesto, seguía sin verse la actualización en vivo: le
+     respondían a un DM ya conocido y la lista no se movía de lugar ni
+     cambiaba el preview (bug real, encontrado y corregido el mismo día).
+     La causa: `mapSequentialWithDelay()` aplicaba la pausa de
+     `HISTORY_FETCH_DELAY_MS` (300ms) entre **todos** los ítems de
+     `pushChatListOnce()`, no solo entre los que de verdad pegan contra
+     `conversations.history` — con 154 DMs ya cacheados (que no piden nada,
+     `resolveConversationMeta()` corta por `lastMessageCache`), eso son
+     ~46s de demora artificial antes de mandar la lista, en cada mensaje
+     entrante. Fix: lo ya conocido (`knownIms`/`knownRest`) se resuelve en
+     paralelo sin pausa; la pausa secuencial solo aplica al lote de
+     conversaciones nunca vistas (`toFetchNow`, con el tope de arriba).
 - **Filtro opcional de menciones:** checkbox en la pantalla de
   emparejamiento (`mentionFilter`, guardado en las credenciales). Cuando
   está prendido, `pushChatListOnce()` en `slack.js` deja afuera los

@@ -420,16 +420,32 @@ async function pushChatListOnce() {
     const knownIms = ims.filter((c) => lastMessageCache.has(c.id));
     const unknownIms = ims.filter((c) => !lastMessageCache.has(c.id));
     const knownRest = rest.filter((c) => lastMessageCache.has(c.id));
-    const toFetch = [...knownIms, ...knownRest, ...unknownIms.slice(0, UNKNOWN_HISTORY_FETCH_CAP)];
+    const toFetchNow = unknownIms.slice(0, UNKNOWN_HISTORY_FETCH_CAP);
     if (unknownIms.length > UNKNOWN_HISTORY_FETCH_CAP) {
       console.error(
         `[sl] membresía real: ${channels.length} canales/DMs (${ims.length} DMs 1:1), ${unknownIms.length} DMs sin preview todavía — pidiendo ${UNKNOWN_HISTORY_FETCH_CAP} más ahora, el resto se completa con el uso. Canales y mpim no se backfillean, solo entran con actividad en vivo.`
       );
     }
-    const withMeta = await mapSequentialWithDelay(toFetch, HISTORY_FETCH_DELAY_MS, async (c) => ({
-      channel: c,
-      meta: await resolveConversationMeta(c),
-    }));
+    // Lo ya conocido (knownIms/knownRest) no pide nada a conversations.history
+    // — resolveConversationMeta() corta directo por lastMessageCache — así
+    // que va en paralelo sin pausa. La pausa secuencial de
+    // mapSequentialWithDelay() solo tiene sentido para lo nunca visto, que sí
+    // pega contra la API; meterla también para lo ya cacheado (bug real,
+    // encontrado 2026-08-13: con 154 DMs conocidos, la pausa artificial de
+    // 300ms entre cada uno sumaba ~46s antes de mandar la lista actualizada
+    // en CADA mensaje entrante, aunque ese mensaje fuera de un chat ya
+    // conocido) tumbaba la actualización en vivo que wireSocketEvents()
+    // dispara en cada mensaje.
+    const [knownMeta, unknownMeta] = await Promise.all([
+      Promise.all(
+        [...knownIms, ...knownRest].map(async (c) => ({ channel: c, meta: await resolveConversationMeta(c) }))
+      ),
+      mapSequentialWithDelay(toFetchNow, HISTORY_FETCH_DELAY_MS, async (c) => ({
+        channel: c,
+        meta: await resolveConversationMeta(c),
+      })),
+    ]);
+    const withMeta = [...knownMeta, ...unknownMeta];
     // Los DMs y mensajes directos de grupo son "conversación privada" por
     // definición — siempre se muestran. Los canales normales solo entran si
     // el filtro de menciones está apagado o si el último mensaje menciona
