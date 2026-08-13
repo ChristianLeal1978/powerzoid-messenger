@@ -411,41 +411,61 @@ async function mapSequentialWithDelay(items, delayMs, fn) {
 // también son muchos) porque son lo que el usuario pidió ver siempre.
 const UNKNOWN_HISTORY_FETCH_CAP = 80;
 
+// backfillUnknownIms() y pushChatListOnce() están separadas a propósito —
+// no una corriendo "en paralelo pero adentro de la misma función" (eso fue
+// un intento anterior, bug real encontrado el mismo día: aunque el cálculo
+// de lo ya conocido corriera rápido, pushChatListOnce() igual esperaba a
+// que TERMINARA el lote lento de lo desconocido antes de mandar
+// 'sl:chats' — un mensaje en un chat ya conocido seguía sin reflejarse
+// mientras hubiera backfill pendiente, que con 154 DMs por cubrir podía
+// ser la mayor parte de la sesión). Ahora pushChatListOnce() manda
+// SIEMPRE con lo que ya está cacheado, sin esperar nada — y el backfill
+// corre aparte, con su propio mutex, y dispara pushChatList() de nuevo
+// cuando encuentra algo nuevo.
+let backfillInFlight = false;
+
+async function backfillUnknownIms() {
+  if (backfillInFlight || !web) return;
+  backfillInFlight = true;
+  // Solo redispara pushChatList() si de verdad se pidió algo nuevo — si no,
+  // con 0 DMs pendientes esto y pushChatListOnce() (que llama a
+  // backfillUnknownIms() al final) se llamarían entre sí para siempre.
+  let fetchedSomething = false;
+  try {
+    const channels = await getMemberChannels();
+    const unknownIms = channels.filter((c) => c.is_im && !lastMessageCache.has(c.id));
+    if (!unknownIms.length) return;
+    const batch = unknownIms.slice(0, UNKNOWN_HISTORY_FETCH_CAP);
+    if (unknownIms.length > UNKNOWN_HISTORY_FETCH_CAP) {
+      console.error(
+        `[sl] ${unknownIms.length} DMs sin preview todavía — pidiendo ${UNKNOWN_HISTORY_FETCH_CAP} más ahora, el resto se completa con el uso.`
+      );
+    }
+    await mapSequentialWithDelay(batch, HISTORY_FETCH_DELAY_MS, (c) => resolveConversationMeta(c));
+    fetchedSomething = true;
+  } catch (err) {
+    console.error('[sl] backfillUnknownIms() falló:', err.message || err);
+  } finally {
+    backfillInFlight = false;
+    if (fetchedSomething) pushChatList();
+  }
+}
+
 async function pushChatListOnce() {
   if (!web) return;
   try {
     const channels = await getMemberChannels();
-    const ims = channels.filter((c) => c.is_im);
-    const rest = channels.filter((c) => !c.is_im);
-    const knownIms = ims.filter((c) => lastMessageCache.has(c.id));
-    const unknownIms = ims.filter((c) => !lastMessageCache.has(c.id));
-    const knownRest = rest.filter((c) => lastMessageCache.has(c.id));
-    const toFetchNow = unknownIms.slice(0, UNKNOWN_HISTORY_FETCH_CAP);
-    if (unknownIms.length > UNKNOWN_HISTORY_FETCH_CAP) {
-      console.error(
-        `[sl] membresía real: ${channels.length} canales/DMs (${ims.length} DMs 1:1), ${unknownIms.length} DMs sin preview todavía — pidiendo ${UNKNOWN_HISTORY_FETCH_CAP} más ahora, el resto se completa con el uso. Canales y mpim no se backfillean, solo entran con actividad en vivo.`
-      );
-    }
-    // Lo ya conocido (knownIms/knownRest) no pide nada a conversations.history
-    // — resolveConversationMeta() corta directo por lastMessageCache — así
-    // que va en paralelo sin pausa. La pausa secuencial de
-    // mapSequentialWithDelay() solo tiene sentido para lo nunca visto, que sí
-    // pega contra la API; meterla también para lo ya cacheado (bug real,
-    // encontrado 2026-08-13: con 154 DMs conocidos, la pausa artificial de
-    // 300ms entre cada uno sumaba ~46s antes de mandar la lista actualizada
-    // en CADA mensaje entrante, aunque ese mensaje fuera de un chat ya
-    // conocido) tumbaba la actualización en vivo que wireSocketEvents()
-    // dispara en cada mensaje.
-    const [knownMeta, unknownMeta] = await Promise.all([
-      Promise.all(
-        [...knownIms, ...knownRest].map(async (c) => ({ channel: c, meta: await resolveConversationMeta(c) }))
-      ),
-      mapSequentialWithDelay(toFetchNow, HISTORY_FETCH_DELAY_MS, async (c) => ({
-        channel: c,
-        meta: await resolveConversationMeta(c),
-      })),
-    ]);
-    const withMeta = [...knownMeta, ...unknownMeta];
+    // Solo lo ya conocido (lastMessageCache) — resolveConversationMeta()
+    // corta directo ahí sin pedir nada a conversations.history, así que
+    // esto siempre es rápido. Canales y mpim nunca backfilleados quedan
+    // afuera hasta que entren por actividad en vivo (ver comentario
+    // arriba); DMs todavía no vistos quedan afuera hasta que
+    // backfillUnknownIms() los cubra.
+    const known = channels.filter((c) => lastMessageCache.has(c.id));
+    const withMeta = await Promise.all(
+      known.map(async (c) => ({ channel: c, meta: await resolveConversationMeta(c) }))
+    );
+    backfillUnknownIms(); // en segundo plano, no bloquea el envío de arriba
     // Los DMs y mensajes directos de grupo son "conversación privada" por
     // definición — siempre se muestran. Los canales normales solo entran si
     // el filtro de menciones está apagado o si el último mensaje menciona
@@ -734,10 +754,29 @@ async function getMessages(channelId) {
   }
 }
 
+// Slack no hace eco por Socket Mode de los mensajes que uno mismo manda
+// con su propio token de usuario (bug real, reportado por el usuario
+// 2026-08-13: le respondían y el chat subía al tope de la lista; cuando
+// respondía él, no pasaba nada). wireSocketEvents() solo se entera de
+// mensajes ajenos, así que hay que reflejar el propio a mano, en vez de
+// esperar un evento que nunca llega.
+async function recordOwnMessage(chatId, ts, text) {
+  if (!ts) return;
+  try {
+    const serialized = await serializeMessage({ ts, user: myUserId, text }, chatId);
+    lastMessageCache.set(chatId, { text: serialized.body, ts: serialized.timestamp, mentionsMe: false });
+    send('sl:incoming', serialized);
+    pushChatList();
+  } catch (err) {
+    console.error('[sl] no se pudo reflejar el mensaje propio en la lista:', err.message || err);
+  }
+}
+
 async function sendMessage({ chatId, text }) {
   if (!web) return { ok: false };
   try {
-    await web.chat.postMessage({ channel: chatId, text });
+    const res = await web.chat.postMessage({ channel: chatId, text });
+    await recordOwnMessage(chatId, res.ts, text);
     return { ok: true };
   } catch (err) {
     console.error('[sl] sendMessage() falló:', err.message || err);
@@ -748,12 +787,18 @@ async function sendMessage({ chatId, text }) {
 async function sendImage({ chatId, base64, mimetype, filename, caption }) {
   if (!web) return { ok: false };
   try {
-    await web.filesUploadV2({
+    const res = await web.filesUploadV2({
       channel_id: chatId,
       file: Buffer.from(base64, 'base64'),
       filename: filename || 'imagen',
       initial_comment: caption || undefined,
     });
+    // filesUploadV2() no devuelve un ts de mensaje de canal tan directo como
+    // chat.postMessage — al menos actualizamos el preview de la lista con
+    // la hora actual, aunque no dispare sl:incoming (la imagen ya se ve en
+    // el picker antes de mandarla, no es tan crítico como el texto).
+    lastMessageCache.set(chatId, { text: caption || '📷 Imagen', ts: Math.floor(Date.now() / 1000), mentionsMe: false });
+    pushChatList();
     return { ok: true };
   } catch (err) {
     console.error('[sl] sendImage() falló:', err.message || err);

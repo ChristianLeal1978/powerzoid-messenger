@@ -500,6 +500,10 @@ async function openChat(chatId, name) {
 }
 
 function renderMessage(msg) {
+  // Evita duplicar la burbuja si el mismo mensaje llega dos veces (ej. un
+  // mensaje propio de Slack que sí llegara a hacer eco además del reflejo
+  // manual que hace recordOwnMessage() en slack.js).
+  if (messageElements.has(msg.id)) return;
   const wrap = document.createElement('div');
   wrap.className = 'bubble-wrap' + (msg.fromMe ? ' mine' : '');
 

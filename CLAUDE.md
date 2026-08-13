@@ -147,16 +147,43 @@ menciones, qué `window.api.*` llamar).
      para los mpim que sí entran por actividad en vivo, no para los 725.
   5. Con el tope puesto, seguía sin verse la actualización en vivo: le
      respondían a un DM ya conocido y la lista no se movía de lugar ni
-     cambiaba el preview (bug real, encontrado y corregido el mismo día).
-     La causa: `mapSequentialWithDelay()` aplicaba la pausa de
-     `HISTORY_FETCH_DELAY_MS` (300ms) entre **todos** los ítems de
-     `pushChatListOnce()`, no solo entre los que de verdad pegan contra
-     `conversations.history` — con 154 DMs ya cacheados (que no piden nada,
-     `resolveConversationMeta()` corta por `lastMessageCache`), eso son
-     ~46s de demora artificial antes de mandar la lista, en cada mensaje
-     entrante. Fix: lo ya conocido (`knownIms`/`knownRest`) se resuelve en
-     paralelo sin pausa; la pausa secuencial solo aplica al lote de
-     conversaciones nunca vistas (`toFetchNow`, con el tope de arriba).
+     cambiaba el preview. Dos bugs reales seguidos, mismo día:
+     - `mapSequentialWithDelay()` aplicaba la pausa de
+       `HISTORY_FETCH_DELAY_MS` (300ms) entre **todos** los ítems de
+       `pushChatListOnce()`, no solo entre los que de verdad pegan contra
+       `conversations.history` — con 154 DMs ya cacheados (que no piden
+       nada, `resolveConversationMeta()` corta por `lastMessageCache`),
+       eso son ~46s de demora artificial en cada mensaje entrante.
+     - Arreglado eso, seguía lento: el primer intento paralelizaba el
+       cálculo de lo ya conocido con el backfill lento de lo desconocido,
+       pero **adentro de la misma función** — `pushChatListOnce()` seguía
+       esperando a que terminara el backfill (podía ser la sesión entera)
+       antes de mandar `sl:chats`, aunque lo conocido ya estuviera listo
+       hacía rato.
+     Fix final: `pushChatListOnce()` y `backfillUnknownIms()` son dos
+     funciones separadas. `pushChatListOnce()` manda la lista SIEMPRE con
+     lo que ya está en `lastMessageCache`, sin esperar nada — rápido por
+     definición. `backfillUnknownIms()` corre aparte, con su propio mutex
+     (`backfillInFlight`), pide un lote de hasta `UNKNOWN_HISTORY_FETCH_CAP`
+     DMs nuevos, y al terminar dispara `pushChatList()` de nuevo para que
+     ese lote se refleje — pero solo si de verdad pidió algo (si no,
+     `pushChatListOnce()` llamando a `backfillUnknownIms()` al final y
+     este llamando a `pushChatList()` en su `finally` se dispararían entre
+     sí para siempre con 0 DMs pendientes).
+  6. Con eso andando confirmó algo más de fondo: cuando le respondían a
+     Christian el chat subía al tope de la lista; cuando **él** respondía,
+     no pasaba nada — nunca subía, nunca cambiaba el preview. Causa real:
+     Slack no hace eco por Socket Mode de los mensajes que el propio token
+     de usuario manda — `wireSocketEvents()` solo se entera de mensajes
+     ajenos, nunca de los propios, así que `lastMessageCache` nunca se
+     actualizaba para el lado de "yo mandé esto". Fix: `recordOwnMessage()`
+     en `slack.js`, llamado desde `sendMessage()`/`sendImage()` justo
+     después de un envío exitoso, actualiza `lastMessageCache` y dispara
+     `pushChatList()` a mano — mismo efecto que si el evento hubiera
+     llegado, sin depender de que Slack lo mande. `renderMessage()` en
+     `renderer.js` ahora también corta si `messageElements` ya tiene ese
+     id, por si algún día Slack sí llega a hacer eco y habría que evitar
+     la burbuja duplicada.
 - **Filtro opcional de menciones:** checkbox en la pantalla de
   emparejamiento (`mentionFilter`, guardado en las credenciales). Cuando
   está prendido, `pushChatListOnce()` en `slack.js` deja afuera los
