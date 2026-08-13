@@ -108,6 +108,16 @@ menciones, qué `window.api.*` llamar).
   un refresco cuando el canal del mensaje no está en la membresía ya
   conocida, coalescido con `memberChannelsRefreshPromise` para no disparar
   paginaciones paralelas si llegan varios canales nuevos a la vez.
+- **`pushChatListOnce()` limita la concurrencia de `conversations.history`**
+  (`HISTORY_FETCH_CONCURRENCY = 8`, `mapWithConcurrency()` en `slack.js`) —
+  bug real, encontrado 2026-08-13 al pasar a token de usuario: antes
+  (token de bot) la membresía era un puñado de canales invitados a mano;
+  con token de usuario es toda la membresía real, que en un workspace
+  normal ya son decenas o cientos. Pedirlos todos con `Promise.all` los
+  manda en simultáneo, Slack rate-limita casi todos a la vez, y como todos
+  reintentan al mismo `retry-after` nunca converge (loop de rate limit
+  infinito, visto en vivo). Solo importa en el primer refresco de cada
+  canal — `resolveConversationMeta()` ya cachea el resultado por canal.
 - **Filtro opcional de menciones:** checkbox en la pantalla de
   emparejamiento (`mentionFilter`, guardado en las credenciales). Cuando
   está prendido, `pushChatListOnce()` en `slack.js` deja afuera los

@@ -342,13 +342,64 @@ async function pushChatList() {
   }
 }
 
+// resolveConversationMeta() le pega a conversations.history una vez por
+// canal nuevo (ver el cache en esa función) — con un token de bot eso era
+// un puñado de canales, pero con un token de usuario es toda tu membresía
+// real, que en un workspace grande puede ser decenas o cientos. Pedirlos
+// en paralelo (incluso con un límite de concurrencia moderado, probado en
+// vivo con 8) los manda en ráfaga, Slack rate-limita casi todos a la vez,
+// y como todos reintentan al mismo tiempo (retry-after del SDK) el bug
+// real que causó esto (encontrado 2026-08-13) es que nunca converge —
+// queda reintentando en bucle indefinidamente. Un solo pedido en vuelo
+// más una pausa entre cada uno es lo único que lo hace converger de
+// verdad: más lento en el primer load de un workspace grande, pero
+// termina. Los refrescos siguientes son baratos por el cache de arriba.
+const HISTORY_FETCH_DELAY_MS = 300;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function mapSequentialWithDelay(items, delayMs, fn) {
+  const results = new Array(items.length);
+  for (let i = 0; i < items.length; i++) {
+    results[i] = await fn(items[i]);
+    if (i < items.length - 1) await delay(delayMs);
+  }
+  return results;
+}
+
+// En un workspace grande la membresía real (getMemberChannels()) puede ser
+// de cientos de canales (caso real visto en vivo: 725) — pedirle a Slack el
+// último mensaje de todos ellos, aunque sea de a uno, tarda varios minutos
+// en el primer arranque. Los DMs/mensajes directos de grupo siempre se
+// piden (son pocos y son lo que más importa acá) y los canales normales
+// que ya tienen algo en lastMessageCache también (piden nada, ya está
+// cacheado) — el tope solo aplica a canales normales nunca vistos, así el
+// primer load es rápido. Como pushChatListOnce() se vuelve a llamar en
+// cada mensaje que llega (wireSocketEvents -> pushChatList()), cada
+// refresco intenta un lote nuevo de REGULAR_CHANNEL_HISTORY_CAP canales
+// todavía no vistos, así que el resto se va completando solo con el uso.
+const REGULAR_CHANNEL_HISTORY_CAP = 80;
+
 async function pushChatListOnce() {
   if (!web) return;
   try {
     const channels = await getMemberChannels();
-    const withMeta = await Promise.all(
-      channels.map(async (c) => ({ channel: c, meta: await resolveConversationMeta(c) }))
-    );
+    const dmsAndGroups = channels.filter((c) => c.is_im || c.is_mpim);
+    const regular = channels.filter((c) => !c.is_im && !c.is_mpim);
+    const alreadyKnown = regular.filter((c) => lastMessageCache.has(c.id));
+    const unknown = regular.filter((c) => !lastMessageCache.has(c.id));
+    const toFetch = [...dmsAndGroups, ...alreadyKnown, ...unknown.slice(0, REGULAR_CHANNEL_HISTORY_CAP)];
+    if (unknown.length > REGULAR_CHANNEL_HISTORY_CAP) {
+      console.error(
+        `[sl] membresía real: ${channels.length} canales/DMs, ${unknown.length} canales normales sin preview todavía — pidiendo ${REGULAR_CHANNEL_HISTORY_CAP} más ahora, el resto se completa con el uso.`
+      );
+    }
+    const withMeta = await mapSequentialWithDelay(toFetch, HISTORY_FETCH_DELAY_MS, async (c) => ({
+      channel: c,
+      meta: await resolveConversationMeta(c),
+    }));
     // Los DMs y mensajes directos de grupo son "conversación privada" por
     // definición — siempre se muestran. Los canales normales solo entran si
     // el filtro de menciones está apagado o si el último mensaje menciona
@@ -360,8 +411,8 @@ async function pushChatListOnce() {
       id: channel.id,
       name: meta.name,
       isGroup: !channel.is_im,
-      // La Web API no expone conteo real de no-leídos para bots de forma
-      // simple — se deja en 0 (ver limitación conocida en README).
+      // La Web API no expone conteo real de no-leídos de forma simple —
+      // se deja en 0 (ver limitación conocida en README).
       unreadCount: 0,
       lastMessage: meta.lastMessage,
       timestamp: meta.timestamp,
