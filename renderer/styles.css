@@ -316,6 +316,13 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   font-size: 13px;
   line-height: 1;
 }
+.message-alert-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--unread);
+}
 .badge {
   min-width: 16px; height: 16px;
   padding: 0 4px;

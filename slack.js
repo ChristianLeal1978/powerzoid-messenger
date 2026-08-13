@@ -81,6 +81,29 @@ async function getUserInfo(id) {
   return info;
 }
 
+// Los mensajes directos de grupo (mpim) no tienen nombre propio en Slack —
+// el campo `name` que devuelve la API es el slug crudo interno
+// (`mpdm-fulano--mengano--zutano-1`), no algo para mostrarle a nadie.
+// Resolvemos a los nombres reales de los participantes, como hace
+// cualquier cliente de Slack real.
+const mpimNameCache = new Map();
+
+async function getMpimName(channelId) {
+  if (mpimNameCache.has(channelId)) return mpimNameCache.get(channelId);
+  let name = channelId;
+  try {
+    const res = await web.conversations.members({ channel: channelId, limit: 200 });
+    const ids = (res.members || []).filter((id) => id !== myUserId);
+    const infos = await Promise.all(ids.map((id) => getUserInfo(id)));
+    const names = infos.map((i) => i.name);
+    name = names.length > 3 ? `${names.slice(0, 3).join(', ')} y ${names.length - 3} más` : names.join(', ');
+  } catch (err) {
+    // Sin acceso a la membresía del grupo — mejor el slug crudo que romper.
+  }
+  mpimNameCache.set(channelId, name);
+  return name;
+}
+
 function fetchAsDataUri(url, token) {
   return new Promise((resolve) => {
     const options = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
@@ -229,6 +252,8 @@ async function resolveConversationMeta(c) {
     name = info.name;
     avatar = await getAvatar(c.user, info.avatarUrl);
     online = await getPresence(c.user);
+  } else if (c.is_mpim) {
+    name = await getMpimName(c.id);
   } else {
     name = c.name || c.id;
   }
@@ -370,30 +395,35 @@ async function mapSequentialWithDelay(items, delayMs, fn) {
 }
 
 // En un workspace grande la membresía real (getMemberChannels()) puede ser
-// de cientos de canales (caso real visto en vivo: 725) — pedirle a Slack el
-// último mensaje de todos ellos, aunque sea de a uno, tarda varios minutos
-// en el primer arranque. Los DMs/mensajes directos de grupo siempre se
-// piden (son pocos y son lo que más importa acá) y los canales normales
-// que ya tienen algo en lastMessageCache también (piden nada, ya está
-// cacheado) — el tope solo aplica a canales normales nunca vistos, así el
-// primer load es rápido. Como pushChatListOnce() se vuelve a llamar en
-// cada mensaje que llega (wireSocketEvents -> pushChatList()), cada
-// refresco intenta un lote nuevo de REGULAR_CHANNEL_HISTORY_CAP canales
-// todavía no vistos, así que el resto se va completando solo con el uso.
-const REGULAR_CHANNEL_HISTORY_CAP = 80;
+// de cientos de conversaciones (caso real visto en vivo: 725) — y la
+// abrumadora mayoría resultaron ser mensajes directos de grupo (mpim)
+// viejos y muertos (con gente ya desactivada hace años), no DMs 1:1 ni
+// nada con actividad reciente. Backfillear eso (aunque sea con tope y de a
+// uno) no solo es lento, es ruido: el usuario reportó ver el mpim más
+// viejo antes que cualquier cosa reciente, porque el orden que devuelve
+// conversations.list no es por actividad. Decisión de producto confirmada
+// con el usuario 2026-08-13: la barra solo le importa a DMs 1:1 (siempre)
+// y a lo que efectivamente pasa en vivo durante la sesión — canales
+// normales y mpim NO se backfillean nunca; entran a la lista recién
+// cuando llega un mensaje real (wireSocketEvents ya cachea el body del
+// evento sin pedir historial) o si ya estaban en lastMessageCache de esta
+// misma sesión. Los DMs 1:1 sí se backfillean (con el mismo tope por si
+// también son muchos) porque son lo que el usuario pidió ver siempre.
+const UNKNOWN_HISTORY_FETCH_CAP = 80;
 
 async function pushChatListOnce() {
   if (!web) return;
   try {
     const channels = await getMemberChannels();
-    const dmsAndGroups = channels.filter((c) => c.is_im || c.is_mpim);
-    const regular = channels.filter((c) => !c.is_im && !c.is_mpim);
-    const alreadyKnown = regular.filter((c) => lastMessageCache.has(c.id));
-    const unknown = regular.filter((c) => !lastMessageCache.has(c.id));
-    const toFetch = [...dmsAndGroups, ...alreadyKnown, ...unknown.slice(0, REGULAR_CHANNEL_HISTORY_CAP)];
-    if (unknown.length > REGULAR_CHANNEL_HISTORY_CAP) {
+    const ims = channels.filter((c) => c.is_im);
+    const rest = channels.filter((c) => !c.is_im);
+    const knownIms = ims.filter((c) => lastMessageCache.has(c.id));
+    const unknownIms = ims.filter((c) => !lastMessageCache.has(c.id));
+    const knownRest = rest.filter((c) => lastMessageCache.has(c.id));
+    const toFetch = [...knownIms, ...knownRest, ...unknownIms.slice(0, UNKNOWN_HISTORY_FETCH_CAP)];
+    if (unknownIms.length > UNKNOWN_HISTORY_FETCH_CAP) {
       console.error(
-        `[sl] membresía real: ${channels.length} canales/DMs, ${unknown.length} canales normales sin preview todavía — pidiendo ${REGULAR_CHANNEL_HISTORY_CAP} más ahora, el resto se completa con el uso.`
+        `[sl] membresía real: ${channels.length} canales/DMs (${ims.length} DMs 1:1), ${unknownIms.length} DMs sin preview todavía — pidiendo ${UNKNOWN_HISTORY_FETCH_CAP} más ahora, el resto se completa con el uso. Canales y mpim no se backfillean, solo entran con actividad en vivo.`
       );
     }
     const withMeta = await mapSequentialWithDelay(toFetch, HISTORY_FETCH_DELAY_MS, async (c) => ({
@@ -664,6 +694,7 @@ function disconnect() {
   mentionFilter = false;
   lastMessageCache.clear();
   userInfoCache.clear();
+  mpimNameCache.clear();
   avatarCache.clear();
   avatarFailedAt.clear();
   presenceCache.clear();

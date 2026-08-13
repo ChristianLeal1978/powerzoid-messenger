@@ -108,25 +108,54 @@ menciones, qué `window.api.*` llamar).
   un refresco cuando el canal del mensaje no está en la membresía ya
   conocida, coalescido con `memberChannelsRefreshPromise` para no disparar
   paginaciones paralelas si llegan varios canales nuevos a la vez.
-- **`pushChatListOnce()` limita la concurrencia de `conversations.history`**
-  (`HISTORY_FETCH_CONCURRENCY = 8`, `mapWithConcurrency()` en `slack.js`) —
-  bug real, encontrado 2026-08-13 al pasar a token de usuario: antes
-  (token de bot) la membresía era un puñado de canales invitados a mano;
-  con token de usuario es toda la membresía real, que en un workspace
-  normal ya son decenas o cientos. Pedirlos todos con `Promise.all` los
-  manda en simultáneo, Slack rate-limita casi todos a la vez, y como todos
-  reintentan al mismo `retry-after` nunca converge (loop de rate limit
-  infinito, visto en vivo). Solo importa en el primer refresco de cada
-  canal — `resolveConversationMeta()` ya cachea el resultado por canal.
+- **`pushChatListOnce()` solo backfillea DMs 1:1 al conectar; canales y
+  mpim entran solo con actividad en vivo** (`slack.js`) — bug real y
+  decisión de producto, ambos encontrados/tomados 2026-08-13 al pasar a
+  token de usuario. Historia completa:
+  1. Con token de bot la membresía era un puñado de canales invitados a
+     mano. Con token de usuario es toda la membresía real — caso real
+     visto en vivo: **725** conversaciones.
+  2. Pedirle a Slack el último mensaje de las 725 con `Promise.all` (o
+     incluso con concurrencia limitada tipo pool de 8) las manda en
+     ráfaga, Slack rate-limita casi todas a la vez, y como reintentan al
+     mismo `retry-after` nunca converge (loop de rate limit infinito,
+     visto en vivo). Primer fix: `mapSequentialWithDelay()` (de a una,
+     `HISTORY_FETCH_DELAY_MS` = 300ms de pausa) más un tope
+     (`UNKNOWN_HISTORY_FETCH_CAP` = 80) sobre cuántas conversaciones
+     *nunca vistas* se piden por refresco — arregló el rate limit, pero
+     no alcanzaba solo: el orden que devuelve `conversations.list` no es
+     por actividad, así que los primeros 80 en salir eran básicamente al
+     azar.
+  3. Con ese primer fix funcionando, el usuario reportó ver puros `mpdm-`
+     (mensajes directos de grupo) con nombres crudos e ilegibles, varios
+     con gente desactivada hace años — de los 725, la abrumadora mayoría
+     eran mpim viejos y muertos, no DMs 1:1 ni nada reciente. El usuario
+     solo quiere ver DMs 1:1 (siempre) y lo que efectivamente le llega en
+     vivo, mencionándolo o no. Fix final: **canales normales y mpim ya no
+     se backfillean nunca** — solo entran a la lista cuando llega un
+     mensaje real durante la sesión (`wireSocketEvents()` ya cachea el
+     body del evento sin pedir historial) o si ya estaban en
+     `lastMessageCache` de esta misma sesión. Los DMs 1:1 sí siguen
+     backfilleándose al conectar (con el mismo tope, por si también son
+     muchos), porque esos el usuario los quiere ver siempre, tengan
+     actividad reciente o no.
+  4. Los mpim también tenían el nombre roto: Slack no les da nombre
+     propio, el campo `name` es el slug interno crudo
+     (`mpdm-fulano--mengano--zutano-1`). `getMpimName()` lo resuelve a
+     los nombres reales de los participantes (vía `conversations.members`
+     + `getUserInfo()`, cacheado en `mpimNameCache`) — solo importa ahora
+     para los mpim que sí entran por actividad en vivo, no para los 725.
 - **Filtro opcional de menciones:** checkbox en la pantalla de
   emparejamiento (`mentionFilter`, guardado en las credenciales). Cuando
   está prendido, `pushChatListOnce()` en `slack.js` deja afuera los
-  canales normales cuyo último mensaje no menciona directamente al usuario
+  canales/mpim cuyo último mensaje no menciona directamente al usuario
   (`<@ID>` crudo, vía `textMentionsUser()`, contra el `myUserId` resuelto
-  de `auth.test()`); DMs y mensajes directos de grupo siempre se muestran.
-  Apagado por default (comportamiento sin filtrar). Mira solo el último
-  mensaje de cada canal, no todo el historial reciente (ver limitación en
-  README).
+  de `auth.test()`); los DMs 1:1 siempre se muestran. Apagado por default
+  (comportamiento sin filtrar). Ojo: desde el punto anterior, esto solo
+  importa para canales/mpim que ya entraron a la lista por actividad en
+  vivo — los que nunca se backfillean tampoco pasan por este filtro, ni
+  falta que hace. Mira solo el último mensaje de cada canal, no todo el
+  historial reciente (ver limitación en README).
 
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho

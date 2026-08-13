@@ -96,6 +96,7 @@ let chats = [];
 let selectedChatId = null;
 const messageElements = new Map(); // msgId -> .bubble-wrap, para reacciones en vivo
 const chatReactionAlerts = new Map(); // chatId -> emoji, para avisar en la lista
+const chatMessageAlerts = new Set(); // chatId con mensaje nuevo sin ver, aunque sea en la pestaña activa
 let openReactionBarWrap = null;
 let currentChatIsGroup = false;
 let groupParticipants = [];
@@ -320,6 +321,7 @@ function renderChatList() {
         <div class="chat-side">
           <span class="chat-time">${formatTime(c.timestamp)}</span>
           ${chatReactionAlerts.has(c.id) ? `<span class="reaction-alert">${chatReactionAlerts.get(c.id)}</span>` : ''}
+          ${chatMessageAlerts.has(c.id) ? '<span class="message-alert-dot"></span>' : ''}
           ${c.unreadCount ? `<span class="badge">${c.unreadCount}</span>` : ''}
         </div>
       `;
@@ -454,6 +456,7 @@ chatSearchInput.addEventListener('keydown', (e) => {
 async function openChat(chatId, name) {
   selectedChatId = chatId;
   chatReactionAlerts.delete(chatId);
+  chatMessageAlerts.delete(chatId);
   pendingMentions = new Map();
   clearPendingImage();
   reactingToMessageId = null;
@@ -660,11 +663,20 @@ window.api.wa.onReactionUpdate((p) => handleReactionUpdate('wa', p));
 window.api.sl.onReactionUpdate((p) => handleReactionUpdate('sl', p));
 
 function handleIncoming(provider, msg) {
+  if (provider === activeProvider && msg.chatId === selectedChatId) {
+    renderMessage(msg);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return;
+  }
+  // Mensaje en un chat que no tengo abierto — antes esto solo se avisaba si
+  // era de la otra pestaña (punto en "WhatsApp"/"Slack"); un mensaje nuevo
+  // en OTRO chat de la misma pestaña activa no dejaba ningún rastro (bug
+  // real, reportado por el usuario: le respondieron y no hubo ningún
+  // aviso). Ahora siempre queda marcado en la fila de ese chat en la
+  // lista, esté o no en la pestaña que estoy mirando.
+  chatMessageAlerts.add(msg.chatId);
   if (provider === activeProvider) {
-    if (msg.chatId === selectedChatId) {
-      renderMessage(msg);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
+    renderChatList();
   } else {
     providerData[provider].hasUnseenActivity = true;
     updateTabDots();
