@@ -32,21 +32,20 @@
   <div id="slack-pairing-screen" class="screen hidden">
     <div class="qr-card">
       <div class="brand">Slack<span>Sidebar</span></div>
-      <p class="hint">Pega los tokens del bot de Slack.<br />Ver README, sección "Conectar Slack".</p>
+      <p class="hint">Pega tus tokens de Slack.<br />Ver README, sección "Conectar Slack".</p>
       <form id="slack-pairing-form" class="slack-pairing-form">
         <label class="slack-field">
-          <span>Bot User OAuth Token</span>
-          <input type="password" id="slack-bot-token" placeholder="xoxb-…" autocomplete="off" spellcheck="false" />
+          <span>User OAuth Token</span>
+          <input type="password" id="slack-user-token" placeholder="xoxp-…" autocomplete="off" spellcheck="false" />
         </label>
         <label class="slack-field">
           <span>App-Level Token</span>
           <input type="password" id="slack-app-token" placeholder="xapp-…" autocomplete="off" spellcheck="false" />
         </label>
-        <label class="slack-field">
-          <span>Tu ID de usuario en Slack (opcional)</span>
-          <input type="text" id="slack-my-user-id" placeholder="U0123456789" autocomplete="off" spellcheck="false" />
+        <label class="slack-checkbox-field">
+          <input type="checkbox" id="slack-mention-filter" />
+          <span>Solo mostrar DMs y canales donde te mencionan directamente</span>
         </label>
-        <p class="slack-field-hint">Si lo completas, la lista solo muestra DMs y canales donde te mencionan directamente. Lo encuentras en tu perfil de Slack → "Más" → "Copiar ID de miembro".</p>
         <button type="submit" id="slack-connect-btn" class="qr-refresh-btn">Conectar</button>
       </form>
       <p class="status-text" id="slack-pairing-status"></p>

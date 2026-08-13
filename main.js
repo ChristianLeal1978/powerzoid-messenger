@@ -136,9 +136,9 @@ ipcMain.handle('sl:downloadAttachment', async (_e, payload) => {
   return res.ok ? saveAttachmentToDisk(res.base64, res.filename) : res;
 });
 
-ipcMain.handle('sl:connect', async (_e, { botToken, appToken, myUserId }) => {
-  const res = await slack.connect({ botToken, appToken, myUserId });
-  if (res.ok) saveSlackCredentials({ botToken, appToken, myUserId });
+ipcMain.handle('sl:connect', async (_e, { userToken, appToken, mentionFilter }) => {
+  const res = await slack.connect({ userToken, appToken, mentionFilter });
+  if (res.ok) saveSlackCredentials({ userToken, appToken, mentionFilter });
   return res;
 });
 
@@ -173,7 +173,7 @@ app.whenReady().then(() => {
   // segundo y perder la carrera contra did-finish-load.
   win.webContents.once('did-finish-load', () => {
     const creds = loadSlackCredentials();
-    if (creds && creds.botToken && creds.appToken) {
+    if (creds && creds.userToken && creds.appToken) {
       send('sl:status', 'connecting');
       slack.connect(creds);
     } else {

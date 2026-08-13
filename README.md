@@ -61,10 +61,21 @@ o `slack.js` (API real de Slack, ver abajo cómo conectarla).
 
 ## Conectar Slack
 
-La pestaña de Slack usa **Socket Mode**: el bot se conecta por WebSocket
+La pestaña de Slack usa **Socket Mode**: la app se conecta por WebSocket
 saliente con dos tokens que generas vos mismo al crear la app en Slack — no
 hace falta levantar ningún servidor propio ni configurar un dominio para el
 callback de OAuth (a diferencia del flujo clásico "Add to Slack").
+
+Lee y escribe con un **token de tu propia cuenta de usuario** (`xoxp-`), no
+con un token de bot. La razón: con un token de bot, `conversations.list` /
+`conversations.history` solo devuelven conversaciones donde el bot mismo es
+miembro — es decir, alguien tendría que escribirle al bot directamente para
+que aparezca acá, lo cual vuelve la barra inútil como espejo de tu Slack
+real. Con un token de usuario, la API ve exactamente los mismos DMs y
+canales que vos, sin que nadie tenga que hacer nada especial. Sigue
+habiendo un "bot user" declarado en el manifiesto, pero es solo un
+requisito técnico de Slack para poder generar el token a nivel de app que
+usa Socket Mode — no se usa para leer ni escribir nada.
 
 ### 1. Crear la app de Slack
 
@@ -86,6 +97,8 @@ features:
 oauth_config:
   scopes:
     bot:
+      - chat:write
+    user:
       - channels:history
       - channels:read
       - chat:write
@@ -103,7 +116,7 @@ oauth_config:
       - users:read
 settings:
   event_subscriptions:
-    bot_events:
+    user_events:
       - message.channels
       - message.groups
       - message.im
@@ -127,7 +140,8 @@ Versión JSON (pestaña **JSON** del editor), mismo contenido:
   },
   "oauth_config": {
     "scopes": {
-      "bot": [
+      "bot": ["chat:write"],
+      "user": [
         "channels:history", "channels:read", "chat:write", "files:read", "files:write",
         "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history",
         "mpim:read", "reactions:read", "reactions:write", "users:read"
@@ -136,7 +150,7 @@ Versión JSON (pestaña **JSON** del editor), mismo contenido:
   },
   "settings": {
     "event_subscriptions": {
-      "bot_events": [
+      "user_events": [
         "message.channels", "message.groups", "message.im", "message.mpim",
         "reaction_added", "reaction_removed"
       ]
@@ -149,39 +163,45 @@ Versión JSON (pestaña **JSON** del editor), mismo contenido:
 }
 ```
 
-Esto configura de una los scopes del bot, el usuario del bot (`features.bot_user`
-— si falta, Slack rechaza el manifiesto con "OAuth requires bot_user"), los
-eventos suscritos y Socket Mode. Después de crearla:
+Esto configura de una los scopes de usuario (los que realmente usa la app
+para leer y escribir), el bot user mínimo que exige Slack para poder emitir
+el App-Level Token (`features.bot_user` — si falta, Slack rechaza el
+manifiesto con "OAuth requires bot_user"; el único scope de bot,
+`chat:write`, existe solo porque Slack exige al menos uno cuando declaras
+un bot_user, pero esta app nunca lo usa), los eventos suscritos (como
+`user_events`, no `bot_events`, para que Socket Mode entregue eventos de
+tus propias conversaciones) y Socket Mode. Después de crearla:
 
 1. **Install to Workspace** (botón en "OAuth & Permissions" o en el resumen
-   de la app) — te va a pedir aprobar los permisos.
-2. Copia el **Bot User OAuth Token** (empieza con `xoxb-`) desde
-   "OAuth & Permissions".
+   de la app) — te va a pedir aprobar tanto los permisos de bot como los de
+   usuario (estos últimos son los que importan).
+2. Copia el **User OAuth Token** (empieza con `xoxp-`, no el Bot User OAuth
+   Token que empieza con `xoxb-`) desde "OAuth & Permissions".
 3. Anda a "Basic Information" → **App-Level Tokens** → **Generate Token and
    Scopes** → agrega el scope `connections:write` → genera el token y
    cópialo (empieza con `xapp-`).
-4. Invita al bot a los canales que quieras ver desde la barra: en Slack,
-   dentro del canal, `/invite @WhatsApp Sidebar Bot` (o el nombre que le
-   hayas puesto). Los mensajes directos no necesitan invitación.
+
+No hace falta invitar nada a ningún canal: al leer con tu propio token de
+usuario, la app ve exactamente los mismos DMs y canales a los que ya
+perteneces.
 
 ### 2. Emparejar la app
 
-En la barra, cambia a la pestaña Slack y pega ambos tokens (bot token y
-app-level token) en la pantalla de emparejamiento. Quedan guardados
+En la barra, cambia a la pestaña Slack y pega ambos tokens (User OAuth
+Token y App-Level Token) en la pantalla de emparejamiento. Quedan guardados
 localmente (cifrados con el keyring del sistema vía `safeStorage` de
 Electron, en `~/.config/whatsapp-sidebar/slack-credentials.json`), así que
 no hay que repetir esto en cada inicio. El engranaje (⚙) junto al buscador,
 visible solo en la pestaña de Slack, permite desconectar y volver a
 emparejar con otros tokens.
 
-Hay un tercer campo opcional en esa misma pantalla: **"Tu ID de usuario en
-Slack"**. El bot y vos sois identidades distintas para la API, así que si
-querés que la lista de chats filtre ruido (solo DMs y canales donde te
-mencionan directamente, en vez de todos los canales a los que el bot
-pertenece), completa ese campo con tu ID de miembro — lo encuentras en
-Slack: tu foto de perfil → **"Ver perfil completo"** → **"Más"** → **"Copiar
-ID de miembro"** (algo como `U0123456789`). Si lo dejas vacío, se muestran
-todos los canales del bot sin filtrar, como hasta ahora.
+Hay un checkbox opcional en esa misma pantalla: **"Solo mostrar DMs y
+canales donde te mencionan directamente"**. Como ahora el token ya es el
+tuyo, la app conoce tu ID de usuario sin que tengas que pegarlo a mano —
+el checkbox solo decide si aplicar el filtro. Los DMs y mensajes directos
+de grupo siempre se muestran sea cual sea el estado del checkbox; lo que
+cambia es si los canales normales entran a la lista solo cuando el último
+mensaje te menciona (`<@tu-id>` crudo) en vez de entrar todos.
 
 **Presencia (online/away):** los DMs muestran un punto verde sobre el
 avatar cuando la otra persona está conectada (`users.getPresence`, mismo
@@ -196,9 +216,9 @@ tardar un rato en reflejar un cambio reciente.
   mensaje igual aparece en la conversación, pero sin indicar que es una
   respuesta.
 - **Sin conteo real de no-leídos:** la Web API no expone esto de forma
-  simple para apps de bot. Si llega un mensaje a un canal que no tienes
-  abierto, se muestra el mismo aviso que ya existe para reacciones (un
-  emoji junto al chat en la lista) en vez de un número.
+  simple, ni siquiera con un token de usuario. Si llega un mensaje a un
+  canal que no tienes abierto, se muestra el mismo aviso que ya existe para
+  reacciones (un emoji junto al chat en la lista) en vez de un número.
 - **Reacciones:** el picker de emojis de la barra es un set fijo (el mismo
   que ya usa WhatsApp) mapeado a los shortcodes de Slack más comunes
   (`slack.js`, `EMOJI_TO_SLACK`) — reaccionar con un emoji fuera de ese set

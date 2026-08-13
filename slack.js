@@ -5,13 +5,17 @@ const { SocketModeClient } = require('@slack/socket-mode');
 let web; // WebClient, null hasta connect()
 let socket; // SocketModeClient, null hasta connect()
 let send; // (channel, payload) => void, inyectado desde main.js
-let botToken = null;
-let botUserId = null;
-// Id de usuario de Slack de la persona (no del bot) — opcional. Si está
-// seteado, la lista de chats deja afuera los canales normales donde el
-// último mensaje no la menciona directamente (ver pushChatListOnce()). Los
-// DMs y mensajes directos de grupo siempre se muestran, sean o no mención.
+// Token de USUARIO (xoxp-), no de bot — así conversations.list/history ven
+// tus propios DMs y canales en vez de solo los que hablan con un bot (ver
+// README, sección "Conectar Slack", para la razón de este cambio).
+let userToken = null;
+// Tu propio ID de usuario, resuelto de auth.test() al conectar — ya no hace
+// falta pedírselo al usuario a mano porque el token ya es el suyo.
 let myUserId = null;
+// Si está prendido, pushChatListOnce() deja afuera los canales normales
+// donde el último mensaje no te menciona directamente. Los DMs y mensajes
+// directos de grupo siempre se muestran, prendido o no (ver pushChatListOnce()).
+let mentionFilter = false;
 
 function textMentionsUser(rawText, userId) {
   if (!userId || !rawText) return false;
@@ -156,15 +160,15 @@ async function getFirstImage(msg) {
   if (!msg.files || !msg.files.length) return null;
   const file = msg.files.find((f) => f.mimetype && f.mimetype.startsWith('image/'));
   if (!file || !file.url_private) return null;
-  // Los archivos de Slack viven en URLs privadas: hace falta el bot token
+  // Los archivos de Slack viven en URLs privadas: hace falta el token
   // como Bearer para poder descargarlos (a diferencia de los avatares de
   // usuario, que sí son públicos).
-  return fetchAsDataUri(file.url_private, botToken);
+  return fetchAsDataUri(file.url_private, userToken);
 }
 
 async function serializeMessage(msg, channelId) {
   const authorId = msg.user || null;
-  const fromMe = !!botUserId && authorId === botUserId;
+  const fromMe = !!myUserId && authorId === myUserId;
   const authorName = authorId && !fromMe ? (await getUserInfo(authorId)).name : null;
   const image = await getFirstImage(msg);
   return {
@@ -182,7 +186,7 @@ async function serializeMessage(msg, channelId) {
     reactions: (msg.reactions || []).map((r) => ({
       emoji: slackNameToEmoji(r.name),
       count: r.count,
-      byMe: !!(botUserId && r.users && r.users.includes(botUserId)),
+      byMe: !!(myUserId && r.users && r.users.includes(myUserId)),
     })),
   };
 }
@@ -347,10 +351,10 @@ async function pushChatListOnce() {
     );
     // Los DMs y mensajes directos de grupo son "conversación privada" por
     // definición — siempre se muestran. Los canales normales solo entran si
-    // no hay filtro configurado (myUserId vacío) o si el último mensaje
-    // menciona directamente a la persona (ver textMentionsUser()).
+    // el filtro de menciones está apagado o si el último mensaje menciona
+    // directamente a la persona (ver textMentionsUser()).
     const relevant = withMeta.filter(
-      ({ channel, meta }) => channel.is_im || channel.is_mpim || !myUserId || meta.mentionsMe
+      ({ channel, meta }) => channel.is_im || channel.is_mpim || !mentionFilter || meta.mentionsMe
     );
     const list = relevant.slice(0, 60).map(({ channel, meta }) => ({
       id: channel.id,
@@ -408,7 +412,7 @@ async function handleReactionEvent(args) {
       reactions: (msg.reactions || []).map((r) => ({
         emoji: slackNameToEmoji(r.name),
         count: r.count,
-        byMe: !!(botUserId && r.users && r.users.includes(botUserId)),
+        byMe: !!(myUserId && r.users && r.users.includes(myUserId)),
       })),
       emoji: event.reaction ? slackNameToEmoji(event.reaction) : null,
     });
@@ -468,13 +472,13 @@ function wireSocketEvents() {
   });
 }
 
-async function connect({ botToken: bt, appToken, myUserId: uid }) {
-  botToken = bt;
-  myUserId = uid || null;
-  web = new WebClient(botToken);
+async function connect({ userToken: token, appToken, mentionFilter: filterOn }) {
+  userToken = token;
+  mentionFilter = !!filterOn;
+  web = new WebClient(userToken);
   try {
     const auth = await web.auth.test();
-    botUserId = auth.user_id;
+    myUserId = auth.user_id;
   } catch (err) {
     console.error('[sl] auth.test() falló:', err.message || err);
     web = null;
@@ -530,7 +534,7 @@ async function getUserDirectory(forceRefresh) {
   if (userDirectoryCache && !forceRefresh && !stale) return userDirectoryCache;
   const all = await listAllUsers();
   userDirectoryCache = all.filter(
-    (u) => !u.deleted && !u.is_bot && u.id !== botUserId && u.id !== 'USLACKBOT'
+    (u) => !u.deleted && !u.is_bot && u.id !== myUserId && u.id !== 'USLACKBOT'
   );
   userDirectoryFetchedAt = Date.now();
   return userDirectoryCache;
@@ -604,9 +608,9 @@ function disconnect() {
   }
   socket = null;
   web = null;
-  botUserId = null;
-  botToken = null;
+  userToken = null;
   myUserId = null;
+  mentionFilter = false;
   lastMessageCache.clear();
   userInfoCache.clear();
   avatarCache.clear();
@@ -685,7 +689,7 @@ async function downloadAttachment({ messageId, chatId }) {
     const msg = result.messages && result.messages[0];
     const file = msg && msg.files && msg.files[0];
     if (!file || !file.url_private) return { ok: false };
-    const base64 = await fetchAsBase64(file.url_private, botToken);
+    const base64 = await fetchAsBase64(file.url_private, userToken);
     if (!base64) return { ok: false };
     return {
       ok: true,
@@ -703,7 +707,7 @@ async function getGroupParticipants(channelId) {
   if (!web) return { ok: false, participants: [] };
   try {
     const res = await web.conversations.members({ channel: channelId, limit: 200 });
-    const ids = (res.members || []).filter((id) => id !== botUserId);
+    const ids = (res.members || []).filter((id) => id !== myUserId);
     const participants = await Promise.all(
       ids.map(async (id) => ({ id, name: (await getUserInfo(id)).name }))
     );

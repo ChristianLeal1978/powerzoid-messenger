@@ -169,6 +169,15 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   line-height: 1.4;
   color: var(--text-dim);
 }
+.slack-checkbox-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+.slack-checkbox-field input { margin-top: 2px; accent-color: var(--accent); }
 .slack-pairing-form .qr-refresh-btn { margin-top: 2px; width: 100%; }
 
 /* --- Barra superior --- */

@@ -60,18 +60,35 @@ los dos está activo salvo en un puñado de puntos (título, mapeo de
 menciones, qué `window.api.*` llamar).
 
 - **Conexión:** Socket Mode (`@slack/socket-mode` + `@slack/web-api`), no
-  OAuth con redirect — el usuario genera un bot token (`xoxb-`) y un
+  OAuth con redirect — el usuario genera un token de usuario (`xoxp-`) y un
   app-level token (`xapp-`) a mano siguiendo el manifiesto en README.md,
   sección "Conectar Slack", y los pega en la pantalla de emparejamiento
   (equivalente al QR de WhatsApp).
+- **Token de usuario, no de bot (cambiado 2026-08-13):** al principio
+  `slack.js` leía con un token de bot (`xoxb-`). Con eso,
+  `conversations.list`/`.history` solo devuelven conversaciones donde el
+  *bot* es miembro — un colega tendría que escribirle al bot directamente
+  para aparecer acá, lo cual hacía la barra inútil como espejo del Slack
+  real del usuario (bug real, reportado por el usuario: un mensaje de un
+  colega nunca aparecía, ni en vivo ni reintentando). El fix fue cambiar a
+  un token de usuario (`xoxp-`, scopes bajo `oauth_config.scopes.user` en
+  el manifiesto, eventos bajo `event_subscriptions.user_events` en vez de
+  `bot_events`) — así la API ve los mismos DMs/canales que el usuario, sin
+  que nadie tenga que invitar ni escribirle a nada. El `bot_user` del
+  manifiesto se mantiene solo porque Slack lo exige para emitir el
+  app-level token; no se usa para leer ni escribir. `myUserId` en
+  `slack.js` ya no viene de un campo que el usuario llena a mano — se
+  resuelve solo de `auth.test()` al conectar, porque el token ya es el
+  suyo.
 - **Credenciales:** guardadas en `~/.config/whatsapp-sidebar/slack-credentials.json`,
   cifradas con `safeStorage` de Electron cuando el keyring del sistema está
   disponible; si no, caen a texto plano con una advertencia en consola
   (`main.js`, `saveSlackCredentials()`) — no bloquea el arranque.
 - **Limitaciones conocidas, no bugs a "arreglar" sin avisar primero:** sin
   hilos (todo se postea plano al canal), sin conteo real de no-leídos (la
-  Web API no lo expone simple para bots — se usa el mismo aviso de
-  reacciones para no dejarlo pasar en silencio), y el picker de reacciones
+  Web API no lo expone simple ni con token de usuario — se usa el mismo
+  aviso de reacciones para no dejarlo pasar en silencio), y el picker de
+  reacciones
   solo cubre el set fijo de emojis que ya usaba WhatsApp (mapeado a
   shortcodes de Slack en `slack.js`, `EMOJI_TO_SLACK`) — reaccionar con
   otro emoji no está soportado desde acá.
@@ -81,25 +98,25 @@ menciones, qué `window.api.*` llamar).
   Socket Mode dispara un evento por mensaje.
 - **`conversations.list` pagina todo el workspace** (`listAllConversations()`
   en `slack.js`) — en un workspace grande devuelve TODOS los canales
-  públicos, no solo los del bot, así que sin paginar los canales del bot
-  podían quedar fuera de la primera página (bug real, encontrado y
+  públicos, no solo los del usuario, así que sin paginar los canales del
+  usuario podían quedar fuera de la primera página (bug real, encontrado y
   corregido 2026-08-10). La membresía resultante se cachea 5 minutos
   (`getMemberChannels()`) para no repetir esa paginación en cada mensaje —
-  pero eso significaba que un canal nuevo para el bot (primer DM de
-  alguien, invitación a un canal) no aparecía hasta que venciera el
-  cooldown (otro bug real, mismo día): el handler de `message` en
-  `wireSocketEvents()` ahora fuerza un refresco cuando el canal del
-  mensaje no está en la membresía ya conocida, coalescido con
-  `memberChannelsRefreshPromise` para no disparar paginaciones paralelas
-  si llegan varios canales nuevos a la vez.
-- **Filtro opcional de menciones:** si el usuario completa su propio ID de
-  Slack (campo opcional en la pantalla de emparejamiento, distinto del
-  `botUserId` del bot), `pushChatListOnce()` en `slack.js` deja afuera los
-  canales normales cuyo último mensaje no lo menciona directamente
-  (`<@ID>` crudo, vía `textMentionsUser()`); DMs y mensajes directos de
-  grupo siempre se muestran. Sin ese campo, comportamiento sin filtrar de
-  siempre. Mira solo el último mensaje de cada canal, no todo el historial
-  reciente (ver limitación en README).
+  pero eso significaba que un canal nuevo (primer DM de alguien, invitación
+  a un canal) no aparecía hasta que venciera el cooldown (otro bug real,
+  mismo día): el handler de `message` en `wireSocketEvents()` ahora fuerza
+  un refresco cuando el canal del mensaje no está en la membresía ya
+  conocida, coalescido con `memberChannelsRefreshPromise` para no disparar
+  paginaciones paralelas si llegan varios canales nuevos a la vez.
+- **Filtro opcional de menciones:** checkbox en la pantalla de
+  emparejamiento (`mentionFilter`, guardado en las credenciales). Cuando
+  está prendido, `pushChatListOnce()` en `slack.js` deja afuera los
+  canales normales cuyo último mensaje no menciona directamente al usuario
+  (`<@ID>` crudo, vía `textMentionsUser()`, contra el `myUserId` resuelto
+  de `auth.test()`); DMs y mensajes directos de grupo siempre se muestran.
+  Apagado por default (comportamiento sin filtrar). Mira solo el último
+  mensaje de cada canal, no todo el historial reciente (ver limitación en
+  README).
 
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho

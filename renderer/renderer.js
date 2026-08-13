@@ -4,9 +4,9 @@ const qrStatus = document.getElementById('qr-status');
 const qrRefreshBtn = document.getElementById('qr-refresh-btn');
 const slackPairingScreen = document.getElementById('slack-pairing-screen');
 const slackPairingForm = document.getElementById('slack-pairing-form');
-const slackBotTokenInput = document.getElementById('slack-bot-token');
+const slackUserTokenInput = document.getElementById('slack-user-token');
 const slackAppTokenInput = document.getElementById('slack-app-token');
-const slackMyUserIdInput = document.getElementById('slack-my-user-id');
+const slackMentionFilterInput = document.getElementById('slack-mention-filter');
 const slackConnectBtn = document.getElementById('slack-connect-btn');
 const slackPairingStatus = document.getElementById('slack-pairing-status');
 const slackDisconnectBtn = document.getElementById('slack-disconnect-btn');
@@ -233,14 +233,14 @@ window.api.wa.onStatus((status) => {
 // --- Emparejamiento de Slack ---
 slackPairingForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const botToken = slackBotTokenInput.value.trim();
+  const userToken = slackUserTokenInput.value.trim();
   const appToken = slackAppTokenInput.value.trim();
-  const myUserId = slackMyUserIdInput.value.trim() || null;
-  if (!botToken || !appToken) return;
+  const mentionFilter = slackMentionFilterInput.checked;
+  if (!userToken || !appToken) return;
   slackConnectBtn.disabled = true;
   slackConnectBtn.textContent = 'Conectando…';
   handleStatus('sl', 'connecting');
-  const res = await window.api.sl.connect(botToken, appToken, myUserId);
+  const res = await window.api.sl.connect(userToken, appToken, mentionFilter);
   slackConnectBtn.disabled = false;
   slackConnectBtn.textContent = 'Conectar';
   if (!res.ok) {
@@ -257,9 +257,9 @@ slackDisconnectBtn.addEventListener('click', async () => {
   const confirmed = window.confirm('¿Desconectar Slack? Vas a tener que volver a pegar los tokens para reconectar.');
   if (!confirmed) return;
   await window.api.sl.disconnect();
-  slackBotTokenInput.value = '';
+  slackUserTokenInput.value = '';
   slackAppTokenInput.value = '';
-  slackMyUserIdInput.value = '';
+  slackMentionFilterInput.checked = false;
   providerData.sl.chats = [];
   providerData.sl.everReady = false;
   closeConversation();
