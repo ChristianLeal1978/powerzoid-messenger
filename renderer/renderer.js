@@ -539,6 +539,14 @@ function renderMessage(msg) {
       });
     }
   }
+  // La burbuja y el botón de descarga van en una fila propia (no el botón
+  // metido dentro de la burbuja): así el ícono queda al lado derecho del
+  // mensaje en vez de aparecer como una línea suelta al final del texto
+  // (pasaba antes porque el botón quedaba después del <span class="t">, que
+  // es display:block y lo empujaba a su propia línea).
+  const row = document.createElement('div');
+  row.className = 'bubble-row';
+  row.appendChild(b);
   if (msg.hasMedia) {
     // Cubre también los adjuntos que no se previsualizan acá (video, audio,
     // documentos — ver el placeholder "📎 Adjunto" arriba): el click pide el
@@ -554,9 +562,9 @@ function renderMessage(msg) {
       e.stopPropagation();
       downloadAttachment(msg);
     });
-    b.appendChild(downloadBtn);
+    row.appendChild(downloadBtn);
   }
-  wrap.appendChild(b);
+  wrap.appendChild(row);
 
   const reactionsEl = document.createElement('div');
   reactionsEl.className = 'reactions';
@@ -568,14 +576,21 @@ function renderMessage(msg) {
 }
 
 // --- Modo teatro: vista ampliada de imágenes ---
-function openLightbox(src) {
+// La ventana es una barra angosta anclada al borde (ver main.js), así que
+// un overlay a pantalla completa por sí solo solo llenaría esa barra. Le
+// pedimos al proceso principal que expanda la ventana real a toda la
+// pantalla mientras dura el modo teatro, y que la devuelva a su tamaño de
+// barra al cerrar.
+async function openLightbox(src) {
   lightboxImg.src = src;
   lightboxEl.classList.remove('hidden');
+  await window.api.ui.expandForLightbox();
 }
 
-function closeLightbox() {
+async function closeLightbox() {
   lightboxEl.classList.add('hidden');
   lightboxImg.src = '';
+  await window.api.ui.collapseFromLightbox();
 }
 
 lightboxEl.addEventListener('click', closeLightbox);

@@ -37,4 +37,9 @@ const sl = {
   downloadAttachment: (messageId, chatId) => ipcRenderer.invoke('sl:downloadAttachment', { messageId, chatId }),
 };
 
-contextBridge.exposeInMainWorld('api', { wa, sl });
+const ui = {
+  expandForLightbox: () => ipcRenderer.invoke('win:expandForLightbox'),
+  collapseFromLightbox: () => ipcRenderer.invoke('win:collapseFromLightbox'),
+};
+
+contextBridge.exposeInMainWorld('api', { wa, sl, ui });

@@ -12,6 +12,12 @@ const TOGGLE_VISIBILITY_SHORTCUT = 'Control+Alt+W';
 
 let win;
 
+// Bounds originales (posición anclada + tamaño de barra) guardados mientras
+// el modo teatro está expandido a pantalla completa; null cuando no lo está.
+// Sirve también de guarda para no pisar el guardado si el renderer llama a
+// expandir dos veces seguidas (ej. dos imágenes abiertas rápido).
+let savedBoundsForLightbox = null;
+
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
 
@@ -110,6 +116,32 @@ function clearSlackCredentials() {
     // ya no había nada guardado
   }
 }
+
+// --- IPC: modo teatro (imágenes) ---
+// La ventana vive anclada al borde izquierdo con un ancho fijo angosto
+// (WINDOW_WIDTH, además limitado por maxWidth). Un <img> con
+// position:fixed;inset:0 solo llena esa ventana angosta, no la pantalla —
+// para que una imagen realmente se vea "a pantalla completa" hay que
+// expandir la ventana misma mientras dura el modo teatro y devolverla a su
+// tamaño/posición de barra al cerrar.
+ipcMain.handle('win:expandForLightbox', () => {
+  if (!win || win.isDestroyed()) return { ok: false };
+  if (savedBoundsForLightbox) return { ok: true }; // ya expandida
+  savedBoundsForLightbox = { bounds: win.getBounds(), maxSize: win.getMaximumSize() };
+  const { workArea } = screen.getDisplayMatching(win.getBounds());
+  win.setMaximumSize(workArea.width, workArea.height);
+  win.setBounds(workArea);
+  return { ok: true };
+});
+
+ipcMain.handle('win:collapseFromLightbox', () => {
+  if (!win || win.isDestroyed() || !savedBoundsForLightbox) return { ok: false };
+  const { bounds, maxSize } = savedBoundsForLightbox;
+  win.setBounds(bounds);
+  win.setMaximumSize(maxSize[0], maxSize[1]);
+  savedBoundsForLightbox = null;
+  return { ok: true };
+});
 
 // --- IPC: WhatsApp ---
 ipcMain.handle('wa:regenerateQr', () => whatsapp.regenerateQr());

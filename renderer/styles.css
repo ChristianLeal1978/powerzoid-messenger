@@ -405,7 +405,15 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
 }
 .bubble-wrap.mine { align-self: flex-end; align-items: flex-end; }
 
+.bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 100%;
+}
+
 .bubble {
+  min-width: 0; /* si no, el item de flex no se achica y rompe el word-wrap */
   padding: 6px 10px;
   border-radius: 10px;
   font-size: 12.5px;
@@ -432,13 +440,12 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   margin-bottom: 2px;
 }
 .attachment-download-btn {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  margin-left: 6px;
-  vertical-align: middle;
+  width: 22px;
+  height: 22px;
   border: none;
   border-radius: 6px;
   background: var(--bg-hover);
