@@ -61,11 +61,39 @@ function send(channel, payload) {
 // Común a wa:downloadAttachment y sl:downloadAttachment: cada módulo trae
 // el archivo (base64) desde su proveedor; acá solo se pregunta dónde
 // guardarlo y se escribe a disco.
+
+// La carpeta del último adjunto guardado, para que el diálogo abra ahí la
+// próxima vez en vez de volver siempre a la carpeta de descargas por
+// defecto del sistema. Un archivo aparte y no algo dentro de las
+// credenciales de Slack porque esto es transversal a ambos proveedores.
+function lastDownloadDirPath() {
+  return path.join(app.getPath('userData'), 'last-download-dir.json');
+}
+
+function loadLastDownloadDir() {
+  try {
+    return JSON.parse(fs.readFileSync(lastDownloadDirPath(), 'utf8')).dir || null;
+  } catch (err) {
+    return null; // sin archivo, corrupto, o primera vez
+  }
+}
+
+function saveLastDownloadDir(dir) {
+  try {
+    fs.writeFileSync(lastDownloadDirPath(), JSON.stringify({ dir }));
+  } catch (err) {
+    console.error('[main] no se pudo guardar la última carpeta de descargas:', err.message || err);
+  }
+}
+
 async function saveAttachmentToDisk(base64, filename) {
-  const { canceled, filePath } = await dialog.showSaveDialog(win, { defaultPath: filename });
+  const lastDir = loadLastDownloadDir();
+  const defaultPath = lastDir ? path.join(lastDir, filename) : filename;
+  const { canceled, filePath } = await dialog.showSaveDialog(win, { defaultPath });
   if (canceled || !filePath) return { ok: false, canceled: true };
   try {
     fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
+    saveLastDownloadDir(path.dirname(filePath));
     return { ok: true, path: filePath };
   } catch (err) {
     console.error('[main] no se pudo guardar el adjunto:', err.message || err);
