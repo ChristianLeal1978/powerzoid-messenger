@@ -550,6 +550,13 @@ function wireSocketEvents() {
     const event = eventFromArgs(args);
     if (!event || !event.channel) return;
     if (event.subtype === 'message_changed' || event.subtype === 'message_deleted') return;
+    // Respuesta en un hilo (thread_ts != ts): la app no tiene hilos
+    // (ver CLAUDE.md, sección Slack) y getMessages() solo trae
+    // conversations.history, que no incluye replies de hilo. Sin este
+    // filtro, cada reply prendía el punto ámbar de "mensaje nuevo" pero
+    // al abrir la conversación no aparecía nada — bug real, reportado
+    // por el usuario como aviso sostenido sin mensaje visible.
+    if (event.thread_ts && event.thread_ts !== event.ts) return;
     // Cada paso en su propio try/catch: un fallo puntual (ej. rate-limit al
     // refrescar membresía) no debe cortar el resto del manejo del evento en
     // silencio — eso dejaba la conversación y/o la lista sin actualizar

@@ -37,6 +37,7 @@ const lightboxImg = document.getElementById('lightbox-img');
 const topbarTitle = document.getElementById('topbar-title');
 const chatSearchInput = document.getElementById('chat-search-input');
 const searchBtn = document.getElementById('search-btn');
+const chatSearchClearBtn = document.getElementById('chat-search-clear-btn');
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
@@ -419,6 +420,7 @@ async function startSlackDirectMessage(userId, name) {
 function openChatSearch() {
   topbarTitle.classList.add('hidden');
   chatSearchInput.classList.remove('hidden');
+  chatSearchClearBtn.classList.remove('hidden');
   searchBtn.classList.add('active');
   chatSearchInput.focus();
 }
@@ -426,6 +428,7 @@ function openChatSearch() {
 function closeChatSearch() {
   topbarTitle.classList.remove('hidden');
   chatSearchInput.classList.add('hidden');
+  chatSearchClearBtn.classList.add('hidden');
   searchBtn.classList.remove('active');
   chatSearchInput.value = '';
   chatSearchQuery = '';
@@ -441,6 +444,8 @@ searchBtn.addEventListener('click', () => {
     closeChatSearch();
   }
 });
+
+chatSearchClearBtn.addEventListener('click', closeChatSearch);
 
 chatSearchInput.addEventListener('input', () => {
   chatSearchQuery = chatSearchInput.value;

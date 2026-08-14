@@ -228,6 +228,11 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
 }
 .search-btn:hover { background: var(--bg-hover); color: var(--text); }
 .search-btn.active { color: var(--accent); }
+.chat-search-clear {
+  margin-left: 0;
+  font-size: 18px;
+  line-height: 1;
+}
 .chat-search-empty {
   padding: 20px 16px;
   text-align: center;
