@@ -562,13 +562,28 @@ function wireSocketEvents() {
     // silencio — eso dejaba la conversación y/o la lista sin actualizar
     // hasta el próximo mensaje, en vez de solo perderse ese refresco puntual.
     try {
+      const mentionsMe = textMentionsUser(event.text, myUserId);
       const serialized = await serializeMessage(event, event.channel);
       lastMessageCache.set(event.channel, {
         text: serialized.body,
         ts: serialized.timestamp,
-        mentionsMe: textMentionsUser(event.text, myUserId),
+        mentionsMe,
       });
-      send('sl:incoming', serialized);
+      // Mismo criterio de visibilidad que pushChatListOnce(): con el filtro
+      // de menciones prendido, un canal normal (ni DM ni mpim) sin mención
+      // directa no entra a la lista — pero este handler prendía el punto
+      // ámbar de "mensaje nuevo" para CUALQUIER mensaje en CUALQUIER canal
+      // del que soy miembro, sin mirar el filtro. Resultado: alerta
+      // sostenida sin nada nuevo visible al abrir Slack (bug real,
+      // reportado por el usuario, seguía después de filtrar replies de
+      // hilo). Si el canal todavía no está en el cache de membresía (recién
+      // llegó) se deja pasar — el refresco de abajo lo resuelve para la
+      // próxima vez.
+      const channelInfo = memberChannelsCache && memberChannelsCache.find((c) => c.id === event.channel);
+      const alwaysVisible = !channelInfo || channelInfo.is_im || channelInfo.is_mpim;
+      if (alwaysVisible || !mentionFilter || mentionsMe) {
+        send('sl:incoming', serialized);
+      }
     } catch (err) {
       console.error('[sl] no se pudo procesar el mensaje entrante:', err.message || err);
     }
