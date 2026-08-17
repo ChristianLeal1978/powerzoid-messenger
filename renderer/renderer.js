@@ -504,6 +504,45 @@ async function openChat(chatId, name) {
   }
 }
 
+// --- Click en el nombre de un autor (grupos/canales): abre chat privado ---
+// El id de autor de WhatsApp (participant._serialized, "<numero>@c.us") es
+// el mismo id que usa un chat individual, así que alcanza con abrirlo como
+// cualquier otro chat de la lista. Slack no tiene ese atajo — hay que pedir
+// (o reusar) el DM vía conversations.open, igual que ya hace el buscador de
+// personas (ver startSlackDirectMessage()).
+async function openAuthorChat(authorId, authorName) {
+  if (!authorId) return;
+  if (activeProvider === 'sl') {
+    await startSlackDirectMessage(authorId, authorName);
+  } else {
+    openChat(authorId, authorName);
+  }
+}
+
+// --- Detección de links en el texto de los mensajes ---
+// Corre sobre el texto ya escapado (escapeHtml) para no reabrir la puerta a
+// inyección de HTML vía el body del mensaje, que es contenido ajeno. OJO:
+// el match además excluye comillas y "<"/">" a propósito — el resultado se
+// inyecta como valor del atributo href más abajo, y escapeHtml() (basado en
+// textContent->innerHTML) no escapa comillas porque no hace falta en texto
+// plano. Sin excluirlas acá, un mensaje armado a mano tipo
+// `http://x/"onmouseover="alert(1)` (sin espacios, así que matchea entero)
+// podría cerrar el atributo e inyectar HTML/JS — viene de contenido ajeno
+// (otro usuario de WhatsApp/Slack), no hay que confiar en él.
+const URL_REGEX = /https?:\/\/[^\s<>"']+/gi;
+function linkifyHtml(text) {
+  return escapeHtml(text).replace(URL_REGEX, (url) => {
+    // Puntuación de cierre de frase pegada al final del link ("mira esto.",
+    // "(link)") probablemente no es parte de la URL — se deja afuera del
+    // <a> para no romper el destino.
+    const trailingMatch = url.match(/[).,!?;:'"]+$/);
+    const trailing = trailingMatch ? trailingMatch[0] : '';
+    const clean = trailing ? url.slice(0, -trailing.length) : url;
+    if (!clean) return url;
+    return `<a href="${clean}" class="msg-link" rel="noopener noreferrer">${clean}</a>${trailing}`;
+  });
+}
+
 function renderMessage(msg) {
   // Evita duplicar la burbuja si el mismo mensaje llega dos veces (ej. un
   // mensaje propio de Slack que sí llegara a hacer eco además del reflejo
@@ -524,10 +563,29 @@ function renderMessage(msg) {
   const bodyHtml = msg.sticker
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
     : msg.image
-    ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${escapeHtml(msg.body)}</span>` : ''}`
-    : escapeHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
+    ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
+    : linkifyHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
   b.innerHTML = `${authorHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
   b.addEventListener('click', () => toggleReactionBar(wrap, msg.id));
+  // El nombre de autor solo aparece en mensajes de grupo/canal ajenos (ver
+  // authorHtml arriba) — clickearlo abre una conversación privada con esa
+  // persona, sin togglear la barra de reacciones del mensaje.
+  const authorEl = b.querySelector('.author');
+  if (authorEl) {
+    authorEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAuthorChat(msg.author, msg.authorName);
+    });
+  }
+  // Los links del texto abren en el navegador por defecto (vía main
+  // process) en vez de navegar la ventana de la app.
+  b.querySelectorAll('.msg-link').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      window.api.ui.openExternal(a.href);
+    });
+  });
   if (msg.image) {
     // El click en la imagen abre el modo teatro y no debe además togglear la
     // barra de reacciones (que está en el listener del bubble, arriba).

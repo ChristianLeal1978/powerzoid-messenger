@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, safeStorage, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, safeStorage, dialog, globalShortcut, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const whatsapp = require('./whatsapp');
@@ -168,6 +168,22 @@ ipcMain.handle('win:collapseFromLightbox', () => {
   win.setBounds(bounds);
   win.setMaximumSize(maxSize[0], maxSize[1]);
   savedBoundsForLightbox = null;
+  return { ok: true };
+});
+
+// --- IPC: abrir links en el navegador por defecto ---
+// Los links vienen de texto de mensajes (WhatsApp/Slack), o sea de
+// contenido ajeno — solo se abren esquemas http/https, nunca file:// ni
+// esquemas custom que podrían invocar otra app instalada sin que el
+// usuario lo pidiera.
+ipcMain.handle('ui:openExternal', (_e, url) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { ok: false };
+  } catch (err) {
+    return { ok: false };
+  }
+  shell.openExternal(url);
   return { ok: true };
 });
 

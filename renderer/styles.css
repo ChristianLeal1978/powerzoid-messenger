@@ -438,7 +438,16 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   font-weight: 600;
   color: var(--accent); /* fallback si no se pudo derivar un color por autor */
   margin-bottom: 2px;
+  cursor: pointer;
 }
+.bubble .author:hover { text-decoration: underline; }
+.msg-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.msg-link:hover { opacity: 0.8; }
 .attachment-download-btn {
   flex: 0 0 auto;
   display: inline-flex;
