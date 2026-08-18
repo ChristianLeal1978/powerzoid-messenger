@@ -1,4 +1,4 @@
-# WhatsApp Sidebar
+# Powerzoid Messenger
 
 Barra lateral vertical de WhatsApp para Linux, pensada para vivir anclada en el
 borde izquierdo del escritorio: una sola columna, con la lista de chats arriba
@@ -39,14 +39,14 @@ lo probemos y lo ajustemos juntos.
 ## Instalación (Fedora)
 
 ```bash
-cd whatsapp-sidebar
+cd powerzoid-messenger
 npm install
 npm start
 ```
 
 La primera vez se abrirá con un código QR — escanéalo desde tu teléfono en
 **WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo**.
-La sesión queda guardada localmente (`~/.config/whatsapp-sidebar/wwebjs_auth`),
+La sesión queda guardada localmente (`~/.config/powerzoid-messenger/wwebjs_auth`),
 así que no tendrás que volver a escanear en cada inicio.
 
 > `whatsapp-web.js` descarga Chromium al hacer `npm install` (puede tardar
@@ -89,10 +89,10 @@ Anda a [api.slack.com/apps](https://api.slack.com/apps) → **Create New App**
 
 ```yaml
 display_information:
-  name: WhatsApp Sidebar Bot
+  name: Powerzoid Messenger Bot
 features:
   bot_user:
-    display_name: WhatsApp Sidebar Bot
+    display_name: Powerzoid Messenger Bot
     always_online: false
 oauth_config:
   scopes:
@@ -134,9 +134,9 @@ Versión JSON (pestaña **JSON** del editor), mismo contenido:
 
 ```json
 {
-  "display_information": { "name": "WhatsApp Sidebar Bot" },
+  "display_information": { "name": "Powerzoid Messenger Bot" },
   "features": {
-    "bot_user": { "display_name": "WhatsApp Sidebar Bot", "always_online": false }
+    "bot_user": { "display_name": "Powerzoid Messenger Bot", "always_online": false }
   },
   "oauth_config": {
     "scopes": {
@@ -190,7 +190,7 @@ perteneces.
 En la barra, cambia a la pestaña Slack y pega ambos tokens (User OAuth
 Token y App-Level Token) en la pantalla de emparejamiento. Quedan guardados
 localmente (cifrados con el keyring del sistema vía `safeStorage` de
-Electron, en `~/.config/whatsapp-sidebar/slack-credentials.json`), así que
+Electron, en `~/.config/powerzoid-messenger/slack-credentials.json`), así que
 no hay que repetir esto en cada inicio. El engranaje (⚙) junto al buscador,
 visible solo en la pestaña de Slack, permite desconectar y volver a
 emparejar con otros tokens.
@@ -289,13 +289,13 @@ después de crear la ventana.
 
 ## Iniciar automáticamente al iniciar sesión
 
-Crea `~/.config/autostart/whatsapp-sidebar.desktop`:
+Crea `~/.config/autostart/powerzoid-messenger.desktop`:
 
 ```ini
 [Desktop Entry]
 Type=Application
-Name=WhatsApp Sidebar
-Exec=/ruta/absoluta/a/whatsapp-sidebar/node_modules/.bin/electron /ruta/absoluta/a/whatsapp-sidebar
+Name=Powerzoid Messenger
+Exec=/ruta/absoluta/a/powerzoid-messenger/node_modules/.bin/electron /ruta/absoluta/a/powerzoid-messenger
 X-GNOME-Autostart-enabled=true
 ```
 
@@ -308,29 +308,29 @@ generadas en varios tamaños). Para que aparezca junto al resto de tus apps:
 # 1. Instalar el ícono en el tema de iconos del usuario
 for size in 16 32 48 64 128 256 512; do
   mkdir -p ~/.local/share/icons/hicolor/${size}x${size}/apps
-  cp assets/icon-${size}.png ~/.local/share/icons/hicolor/${size}x${size}/apps/whatsapp-sidebar.png
+  cp assets/icon-${size}.png ~/.local/share/icons/hicolor/${size}x${size}/apps/powerzoid-messenger.png
 done
 mkdir -p ~/.local/share/icons/hicolor/scalable/apps
-cp assets/icon.svg ~/.local/share/icons/hicolor/scalable/apps/whatsapp-sidebar.svg
+cp assets/icon.svg ~/.local/share/icons/hicolor/scalable/apps/powerzoid-messenger.svg
 gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
 
 # 2. Crear el lanzador (ajusta la ruta absoluta si tu checkout está en otro lugar)
-cat > ~/.local/share/applications/whatsapp-sidebar.desktop <<'EOF'
+cat > ~/.local/share/applications/powerzoid-messenger.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=WhatsApp Sidebar
+Name=Powerzoid Messenger
 Comment=Barra lateral vertical de WhatsApp para Linux
-Exec=/ruta/absoluta/a/whatsapp-sidebar/node_modules/.bin/electron /ruta/absoluta/a/whatsapp-sidebar
-Icon=whatsapp-sidebar
+Exec=/ruta/absoluta/a/powerzoid-messenger/node_modules/.bin/electron /ruta/absoluta/a/powerzoid-messenger
+Icon=powerzoid-messenger
 Terminal=false
 Categories=Network;Chat;InstantMessaging;
-StartupWMClass=whatsapp-sidebar
+StartupWMClass=powerzoid-messenger
 EOF
 
 update-desktop-database ~/.local/share/applications
 ```
 
-Después de esto debería aparecer como "WhatsApp Sidebar" al buscar en
+Después de esto debería aparecer como "Powerzoid Messenger" al buscar en
 Actividades de GNOME. Esto ya se hizo en esta máquina.
 
 ## Personalizar

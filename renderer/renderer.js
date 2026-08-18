@@ -1016,7 +1016,7 @@ document.addEventListener('click', (e) => {
 });
 
 // --- Ajuste del alto de la lista de chats (arrastrando el divisor) ---
-const SPLIT_STORAGE_KEY = 'whatsapp-sidebar:chatListHeight';
+const SPLIT_STORAGE_KEY = 'powerzoid-messenger:chatListHeight';
 const MIN_CHAT_LIST_HEIGHT = 90;
 const MIN_CONVERSATION_HEIGHT = 160;
 

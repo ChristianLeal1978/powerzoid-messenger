@@ -1,5 +1,5 @@
 {
-  "name": "whatsapp-sidebar",
+  "name": "powerzoid-messenger",
   "version": "0.1.0",
   "description": "Barra lateral vertical de WhatsApp para Linux (Electron + whatsapp-web.js)",
   "main": "main.js",

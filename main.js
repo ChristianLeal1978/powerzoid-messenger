@@ -32,7 +32,7 @@ function createWindow() {
     resizable: true,
     skipTaskbar: true,
     backgroundColor: '#12181b',
-    title: 'WhatsApp Sidebar',
+    title: 'Powerzoid Messenger',
     icon: path.join(__dirname, 'assets', 'icon-512.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
