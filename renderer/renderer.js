@@ -211,6 +211,7 @@ tabButtons.forEach((btn) => {
 // --- QR de WhatsApp ---
 window.api.wa.onQr((dataUrl) => {
   qrImg.src = dataUrl;
+  qrImg.classList.remove('hidden');
   qrStatus.textContent = 'Esperando código…';
   providerData.wa.railState = 'reconnecting';
   if (activeProvider === 'wa') setConnectionState('reconnecting');
@@ -222,6 +223,12 @@ qrRefreshBtn.addEventListener('click', async () => {
   qrRefreshBtn.disabled = true;
   qrRefreshBtn.textContent = 'Generando…';
   qrStatus.textContent = 'Generando nuevo código…';
+  // Si la sesión guardada sigue siendo válida, whatsapp-web.js reconecta
+  // solo y nunca emite 'wa:qr' (no hace falta código nuevo) — sin esto, el
+  // <img> se queda mostrando el ícono de imagen rota del QR anterior/vacío
+  // mientras el botón queda pegado en "Generando…" indefinidamente.
+  qrImg.classList.add('hidden');
+  qrImg.removeAttribute('src');
   await window.api.wa.regenerateQr();
 });
 
@@ -229,6 +236,10 @@ window.api.wa.onStatus((status) => {
   handleStatus('wa', status);
   if (status === 'disconnected' || status === 'auth_failure') {
     qrStatus.textContent = 'Sesión desconectada. Reinicia la app.';
+    qrImg.classList.add('hidden');
+    qrImg.removeAttribute('src');
+    qrRefreshBtn.disabled = false;
+    qrRefreshBtn.textContent = 'Generar nuevo código';
   }
 });
 
