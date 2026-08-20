@@ -116,7 +116,16 @@ function initials(name) {
 function formatTime(unixSeconds) {
   if (!unixSeconds) return '';
   const d = new Date(unixSeconds * 1000);
-  return d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+  const now = new Date();
+  const isToday = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  const time = d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (isToday) return time;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear() % 100).padStart(2, '0');
+  return `${dd}/${mm}/${yy} ${time}`;
 }
 
 function setConnectionState(railState) {
