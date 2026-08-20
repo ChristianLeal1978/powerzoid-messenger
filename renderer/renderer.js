@@ -32,6 +32,9 @@ const imageInput = document.getElementById('image-input');
 const imagePreviewEl = document.getElementById('image-preview');
 const imagePreviewImg = document.getElementById('image-preview-img');
 const imagePreviewRemove = document.getElementById('image-preview-remove');
+const filePreviewChip = document.getElementById('file-preview-chip');
+const filePreviewIcon = document.getElementById('file-preview-icon');
+const filePreviewName = document.getElementById('file-preview-name');
 const lightboxEl = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
 const topbarTitle = document.getElementById('topbar-title');
@@ -102,7 +105,7 @@ let openReactionBarWrap = null;
 let currentChatIsGroup = false;
 let groupParticipants = [];
 let pendingMentions = new Map(); // id -> nombre, para el envío
-let pendingImage = null; // { base64, mimetype, filename } de la imagen adjunta, antes de enviar
+let pendingAttachment = null; // { base64, mimetype, filename } del archivo adjunto (imagen o documento), antes de enviar
 let reactingToMessageId = null; // id del mensaje al que se está por reaccionar desde el picker de "+"
 let chatSearchQuery = ''; // filtro en vivo sobre nombre/último mensaje de la lista de chats
 let mentionMatches = [];
@@ -483,7 +486,7 @@ async function openChat(chatId, name) {
   chatReactionAlerts.delete(chatId);
   chatMessageAlerts.delete(chatId);
   pendingMentions = new Map();
-  clearPendingImage();
+  clearPendingAttachment();
   reactingToMessageId = null;
   hideMentionList();
   emojiPickerEl.classList.add('hidden');
@@ -789,50 +792,75 @@ window.api.sl.onIncoming((msg) => handleIncoming('sl', msg));
 
 backBtn.addEventListener('click', closeConversation);
 
-// --- Adjuntar imagen ---
+// --- Adjuntar imagen o documento (PDF, DOC, DOCX) ---
+const DOCUMENT_MIMETYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+const DOCUMENT_ICONS = { 'application/pdf': '\u{1F4D5}' }; // 📕 para PDF, 📄 genérico para el resto
+
+function isAttachableFile(file) {
+  return !!file && (file.type.startsWith('image/') || DOCUMENT_MIMETYPES.has(file.type));
+}
+
 attachBtn.addEventListener('click', () => imageInput.click());
 
 imageInput.addEventListener('change', () => {
   const file = imageInput.files[0];
   imageInput.value = ''; // permite reelegir el mismo archivo después de quitarlo
-  if (!file || !file.type.startsWith('image/')) return;
+  if (!isAttachableFile(file)) return;
   const reader = new FileReader();
   reader.onload = () => {
     const dataUrl = reader.result;
-    pendingImage = { base64: dataUrl.split(',')[1], mimetype: file.type, filename: file.name };
-    imagePreviewImg.src = dataUrl;
-    imagePreviewEl.classList.remove('hidden');
+    pendingAttachment = { base64: dataUrl.split(',')[1], mimetype: file.type, filename: file.name };
+    showAttachmentPreview(pendingAttachment);
     composerInput.focus();
   };
   reader.readAsDataURL(file);
 });
 
-function clearPendingImage() {
-  pendingImage = null;
+function showAttachmentPreview(attachment) {
+  if (attachment.mimetype.startsWith('image/')) {
+    imagePreviewImg.src = `data:${attachment.mimetype};base64,${attachment.base64}`;
+    imagePreviewImg.classList.remove('hidden');
+    filePreviewChip.classList.add('hidden');
+  } else {
+    filePreviewIcon.textContent = DOCUMENT_ICONS[attachment.mimetype] || '\u{1F4C4}';
+    filePreviewName.textContent = attachment.filename;
+    filePreviewChip.classList.remove('hidden');
+    imagePreviewImg.classList.add('hidden');
+  }
+  imagePreviewEl.classList.remove('hidden');
+}
+
+function clearPendingAttachment() {
+  pendingAttachment = null;
   imagePreviewImg.src = '';
+  imagePreviewImg.classList.remove('hidden');
+  filePreviewChip.classList.add('hidden');
   imagePreviewEl.classList.add('hidden');
 }
 
-imagePreviewRemove.addEventListener('click', clearPendingImage);
+imagePreviewRemove.addEventListener('click', clearPendingAttachment);
 
 composer.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = composerInput.value.trim();
-  if (!selectedChatId || (!text && !pendingImage)) return;
+  if (!selectedChatId || (!text && !pendingAttachment)) return;
 
-  if (pendingImage) {
-    const image = pendingImage;
+  if (pendingAttachment) {
+    const attachment = pendingAttachment;
     composerInput.value = '';
     pendingMentions = new Map();
-    clearPendingImage();
+    clearPendingAttachment();
     autoResizeComposer();
     hideMentionList();
-    const res = await activeApi().sendImage(selectedChatId, image.base64, image.mimetype, image.filename, text);
+    const res = await activeApi().sendImage(selectedChatId, attachment.base64, attachment.mimetype, attachment.filename, text);
     if (!res.ok) {
-      // no perdemos la imagen ni el texto si falló el envío
-      pendingImage = image;
-      imagePreviewImg.src = `data:${image.mimetype};base64,${image.base64}`;
-      imagePreviewEl.classList.remove('hidden');
+      // no perdemos el adjunto ni el texto si falló el envío
+      pendingAttachment = attachment;
+      showAttachmentPreview(attachment);
       composerInput.value = text;
       autoResizeComposer();
     }

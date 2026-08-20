@@ -81,11 +81,15 @@
         <div id="emoji-picker" class="emoji-picker hidden"></div>
         <div id="image-preview" class="image-preview hidden">
           <img id="image-preview-img" alt="" />
-          <button type="button" id="image-preview-remove" class="image-preview-remove" aria-label="Quitar imagen">&times;</button>
+          <div id="file-preview-chip" class="file-preview-chip hidden">
+            <span id="file-preview-icon" class="file-preview-icon">&#128196;</span>
+            <span id="file-preview-name" class="file-preview-name"></span>
+          </div>
+          <button type="button" id="image-preview-remove" class="image-preview-remove" aria-label="Quitar adjunto">&times;</button>
         </div>
         <form id="composer" class="composer">
-          <button type="button" id="attach-btn" class="attach-btn" aria-label="Adjuntar imagen">&#128206;</button>
-          <input type="file" id="image-input" accept="image/*" class="hidden" />
+          <button type="button" id="attach-btn" class="attach-btn" aria-label="Adjuntar imagen o documento">&#128206;</button>
+          <input type="file" id="image-input" accept="image/*,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden" />
           <button type="button" id="emoji-btn" class="emoji-btn" aria-label="Emojis">&#9786;</button>
           <textarea id="composer-input" rows="1" placeholder="Escribe un mensaje"></textarea>
           <button type="submit" aria-label="Enviar">&#10148;</button>
