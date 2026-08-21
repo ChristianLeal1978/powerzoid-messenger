@@ -419,6 +419,7 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   font-size: 12.5px;
   line-height: 1.4;
   word-wrap: break-word;
+  white-space: pre-wrap;
   background: var(--bg-elevated);
   cursor: pointer;
 }
