@@ -203,6 +203,33 @@ menciones, qué `window.api.*` llamar).
      normales siguen sin backfillear — ahí no cambia nada, porque el
      filtro de canales es "solo con @mención" (ver entrada siguiente) y
      rellenar canales sin mención no serviría de nada.
+  8. **Bug real, mismo día:** con mpim de vuelta en el backfill, el usuario
+     reportó que tras reiniciar la app Slack se quedaba sin cargar nada —
+     probado en vivo: la membresía real tenía **687** conversaciones
+     desconocidas. Causa: `resolveConversationMeta()` solo guardaba en
+     `lastMessageCache` cuando `conversations.history` devolvía al menos un
+     mensaje — un canal sin un solo mensaje jamás (muy común entre mpim
+     viejos y muertos) quedaba "desconocido" para siempre, así que
+     `backfillUnknownIms()` volvía a pedirlo en CADA lote sin avanzar
+     nunca: mismo lote de 80, mismo resultado, en bucle infinito (probado
+     en vivo con logs: el conteo de "sin preview todavía" se repetía en
+     687 en vez de bajar). Fix: `resolveConversationMeta()` ahora cachea
+     siempre, incluso vacío (`timestamp: 0` como marca de "sin mensaje
+     real"), así el canal cuenta como resuelto y no vuelve a pedirse.
+     `pushChatListOnce()` filtra esos `timestamp === 0` fuera de la lista
+     visible — mostrarlos sería puro ruido (mpim sin un solo mensaje). Con
+     el fix, probado en vivo: el conteo bajó de forma constante (687 → 607
+     → 527 → 447 → 367 → 287 → 207 → 127 → converge) pese a pegar contra
+     el rate-limit de Slack en `conversations.history` y `users.getPresence`
+     (reintentos automáticos del SDK a los 10s, no bloquean, solo
+     ralentizan). Con ~687 desconocidos y lotes de 80 con pausa de 300ms
+     más reintentos de rate-limit, el primer backfill completo tras
+     conectar puede tardar varios minutos — y como `lastMessageCache` vive
+     solo en memoria (se vacía en cada reinicio del proceso), este costo se
+     repite en cada reinicio de la app, no es "una vez y ya". Si esto
+     vuelve a molestar, evaluar persistir el cache a disco entre sesiones
+     en vez de bajar el `UNKNOWN_HISTORY_FETCH_CAP` (bajar el tope solo
+     alargaría la convergencia, no evitaría repetirla en cada reinicio).
 - **Filtro de menciones en canales, permanente (cambiado 2026-08-26):**
   `pushChatListOnce()` en `slack.js` deja afuera los canales normales cuyo
   último mensaje no menciona directamente al usuario (`<@ID>` crudo, vía
