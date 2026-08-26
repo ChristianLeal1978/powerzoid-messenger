@@ -273,12 +273,21 @@ async function resolveConversationMeta(c) {
       lastMessage = await formatSlackText(last.text);
       timestamp = Math.floor(parseFloat(last.ts)) || 0;
       mentionsMe = textMentionsUser(last.text, myUserId);
-      lastMessageCache.set(c.id, { text: lastMessage, ts: timestamp, mentionsMe });
     }
   } catch (err) {
     // Canal sin historial accesible (el bot no es miembro todavía, etc.) —
-    // se deja vacío en vez de reintentar en cada refresco.
+    // se deja vacío.
   }
+  // Se cachea siempre, incluso vacío (sin mensajes o sin acceso) — si no,
+  // ese canal queda "desconocido" para siempre y backfillUnknownIms() lo
+  // vuelve a pedir en CADA lote sin avanzar nunca. Bug real (2026-08-26,
+  // al meter mpim al backfill): de 687 conversaciones desconocidas en un
+  // caso real, una parte importante eran mpim sin un solo mensaje jamás —
+  // sin este cache el backfill se quedaba reintentando ese mismo lote para
+  // siempre, y la lista de Slack no cargaba nada. timestamp 0 marca "sin
+  // mensaje real"; pushChatListOnce() lo usa para no mostrar estos chats
+  // vacíos en la lista.
+  lastMessageCache.set(c.id, { text: lastMessage, ts: timestamp, mentionsMe });
   return { name, avatar, lastMessage, timestamp, mentionsMe, online };
 }
 
@@ -475,12 +484,15 @@ async function pushChatListOnce() {
       known.map(async (c) => ({ channel: c, meta: await resolveConversationMeta(c) }))
     );
     backfillUnknownIms(); // en segundo plano, no bloquea el envío de arriba
-    // Los DMs y mensajes directos de grupo son "conversación privada" por
-    // definición — siempre se muestran. Los canales normales solo entran si
-    // el último mensaje menciona directamente a la persona (ver
-    // textMentionsUser()).
+    // timestamp 0 marca un chat sin un solo mensaje real (ver
+    // resolveConversationMeta()) — se cachea para no trabarse reintentando,
+    // pero no tiene sentido mostrarlo (sería un mpim muerto sin nada que
+    // ver). Los DMs y mensajes directos de grupo con actividad real son
+    // "conversación privada" por definición — siempre se muestran. Los
+    // canales normales solo entran si el último mensaje menciona
+    // directamente a la persona (ver textMentionsUser()).
     const relevant = withMeta.filter(
-      ({ channel, meta }) => channel.is_im || channel.is_mpim || meta.mentionsMe
+      ({ channel, meta }) => meta.timestamp > 0 && (channel.is_im || channel.is_mpim || meta.mentionsMe)
     );
     const list = relevant.slice(0, 60).map(({ channel, meta }) => ({
       id: channel.id,
