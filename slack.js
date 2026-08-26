@@ -12,10 +12,12 @@ let userToken = null;
 // Tu propio ID de usuario, resuelto de auth.test() al conectar — ya no hace
 // falta pedírselo al usuario a mano porque el token ya es el suyo.
 let myUserId = null;
-// Si está prendido, pushChatListOnce() deja afuera los canales normales
-// donde el último mensaje no te menciona directamente. Los DMs y mensajes
-// directos de grupo siempre se muestran, prendido o no (ver pushChatListOnce()).
-let mentionFilter = false;
+// Los canales normales solo entran a la lista si el último mensaje te
+// menciona directamente (ver pushChatListOnce()) — a diferencia de los DMs y
+// los mensajes directos de grupo (mpim), que siempre se muestran porque son
+// conversación privada por definición. Antes esto era un checkbox opcional
+// en la pantalla de emparejamiento; el usuario pidió que "canales solo con
+// @mención" fuera siempre así, sin depender de un ajuste (2026-08-26).
 
 function textMentionsUser(rawText, userId) {
   if (!userId || !rawText) return false;
@@ -398,17 +400,23 @@ async function mapSequentialWithDelay(items, delayMs, fn) {
 // de cientos de conversaciones (caso real visto en vivo: 725) — y la
 // abrumadora mayoría resultaron ser mensajes directos de grupo (mpim)
 // viejos y muertos (con gente ya desactivada hace años), no DMs 1:1 ni
-// nada con actividad reciente. Backfillear eso (aunque sea con tope y de a
-// uno) no solo es lento, es ruido: el usuario reportó ver el mpim más
-// viejo antes que cualquier cosa reciente, porque el orden que devuelve
-// conversations.list no es por actividad. Decisión de producto confirmada
-// con el usuario 2026-08-13: la barra solo le importa a DMs 1:1 (siempre)
-// y a lo que efectivamente pasa en vivo durante la sesión — canales
-// normales y mpim NO se backfillean nunca; entran a la lista recién
-// cuando llega un mensaje real (wireSocketEvents ya cachea el body del
-// evento sin pedir historial) o si ya estaban en lastMessageCache de esta
-// misma sesión. Los DMs 1:1 sí se backfillean (con el mismo tope por si
-// también son muchos) porque son lo que el usuario pidió ver siempre.
+// nada con actividad reciente. Decisión de producto tomada el 2026-08-13:
+// para no ahogar la lista en ese ruido, mpim quedó afuera del backfill —
+// solo entraba cuando llegaba un mensaje real en vivo durante la sesión.
+// Revertido el 2026-08-26: el usuario pidió explícitamente ver siempre sus
+// conversaciones de grupo (mpim), no solo las que reciben un mensaje
+// *después* de abrir la app — y reportó en vivo que una conversación mpim
+// activa había desaparecido de la lista tras reiniciar, justo por este
+// motivo. mpim vuelve a backfillearse junto con los DMs 1:1, con el mismo
+// tope por lote (UNKNOWN_HISTORY_FETCH_CAP) para no disparar todo de una:
+// el orden de conversations.list no es por actividad, así que el primer
+// lote puede traer mpim viejos antes que el activo, pero cada lote
+// dispara pushChatList() de nuevo y, al llegar el turno del mpim activo,
+// su timestamp real lo sube al tope de la lista (pushChatListOnce()
+// ordena por timestamp descendente) — converge solo en un par de lotes,
+// no hace falta esperar a que termine todo el backfill. Canales normales
+// siguen sin backfillear: ahí el filtro es "solo con @mención", así que
+// rellenar canales viejos sin mención no aportaría nada.
 const UNKNOWN_HISTORY_FETCH_CAP = 80;
 
 // backfillUnknownIms() y pushChatListOnce() están separadas a propósito —
@@ -433,12 +441,12 @@ async function backfillUnknownIms() {
   let fetchedSomething = false;
   try {
     const channels = await getMemberChannels();
-    const unknownIms = channels.filter((c) => c.is_im && !lastMessageCache.has(c.id));
+    const unknownIms = channels.filter((c) => (c.is_im || c.is_mpim) && !lastMessageCache.has(c.id));
     if (!unknownIms.length) return;
     const batch = unknownIms.slice(0, UNKNOWN_HISTORY_FETCH_CAP);
     if (unknownIms.length > UNKNOWN_HISTORY_FETCH_CAP) {
       console.error(
-        `[sl] ${unknownIms.length} DMs sin preview todavía — pidiendo ${UNKNOWN_HISTORY_FETCH_CAP} más ahora, el resto se completa con el uso.`
+        `[sl] ${unknownIms.length} DMs/grupos sin preview todavía — pidiendo ${UNKNOWN_HISTORY_FETCH_CAP} más ahora, el resto se completa en lotes siguientes.`
       );
     }
     await mapSequentialWithDelay(batch, HISTORY_FETCH_DELAY_MS, (c) => resolveConversationMeta(c));
@@ -457,10 +465,11 @@ async function pushChatListOnce() {
     const channels = await getMemberChannels();
     // Solo lo ya conocido (lastMessageCache) — resolveConversationMeta()
     // corta directo ahí sin pedir nada a conversations.history, así que
-    // esto siempre es rápido. Canales y mpim nunca backfilleados quedan
-    // afuera hasta que entren por actividad en vivo (ver comentario
-    // arriba); DMs todavía no vistos quedan afuera hasta que
-    // backfillUnknownIms() los cubra.
+    // esto siempre es rápido. Canales normales nunca backfilleados quedan
+    // afuera hasta que entren por actividad en vivo (el filtro es "solo con
+    // @mención", rellenarlos sin eso no aportaría nada); DMs y mpim
+    // todavía no vistos quedan afuera hasta que backfillUnknownIms() los
+    // cubra (ver comentario arriba).
     const known = channels.filter((c) => lastMessageCache.has(c.id));
     const withMeta = await Promise.all(
       known.map(async (c) => ({ channel: c, meta: await resolveConversationMeta(c) }))
@@ -468,10 +477,10 @@ async function pushChatListOnce() {
     backfillUnknownIms(); // en segundo plano, no bloquea el envío de arriba
     // Los DMs y mensajes directos de grupo son "conversación privada" por
     // definición — siempre se muestran. Los canales normales solo entran si
-    // el filtro de menciones está apagado o si el último mensaje menciona
-    // directamente a la persona (ver textMentionsUser()).
+    // el último mensaje menciona directamente a la persona (ver
+    // textMentionsUser()).
     const relevant = withMeta.filter(
-      ({ channel, meta }) => channel.is_im || channel.is_mpim || !mentionFilter || meta.mentionsMe
+      ({ channel, meta }) => channel.is_im || channel.is_mpim || meta.mentionsMe
     );
     const list = relevant.slice(0, 60).map(({ channel, meta }) => ({
       id: channel.id,
@@ -569,19 +578,18 @@ function wireSocketEvents() {
         ts: serialized.timestamp,
         mentionsMe,
       });
-      // Mismo criterio de visibilidad que pushChatListOnce(): con el filtro
-      // de menciones prendido, un canal normal (ni DM ni mpim) sin mención
-      // directa no entra a la lista — pero este handler prendía el punto
-      // ámbar de "mensaje nuevo" para CUALQUIER mensaje en CUALQUIER canal
-      // del que soy miembro, sin mirar el filtro. Resultado: alerta
-      // sostenida sin nada nuevo visible al abrir Slack (bug real,
-      // reportado por el usuario, seguía después de filtrar replies de
-      // hilo). Si el canal todavía no está en el cache de membresía (recién
-      // llegó) se deja pasar — el refresco de abajo lo resuelve para la
-      // próxima vez.
+      // Mismo criterio de visibilidad que pushChatListOnce(): un canal
+      // normal (ni DM ni mpim) sin mención directa no entra a la lista —
+      // pero este handler prendía el punto ámbar de "mensaje nuevo" para
+      // CUALQUIER mensaje en CUALQUIER canal del que soy miembro, sin mirar
+      // la mención. Resultado: alerta sostenida sin nada nuevo visible al
+      // abrir Slack (bug real, reportado por el usuario, seguía después de
+      // filtrar replies de hilo). Si el canal todavía no está en el cache de
+      // membresía (recién llegó) se deja pasar — el refresco de abajo lo
+      // resuelve para la próxima vez.
       const channelInfo = memberChannelsCache && memberChannelsCache.find((c) => c.id === event.channel);
       const alwaysVisible = !channelInfo || channelInfo.is_im || channelInfo.is_mpim;
-      if (alwaysVisible || !mentionFilter || mentionsMe) {
+      if (alwaysVisible || mentionsMe) {
         send('sl:incoming', serialized);
       }
     } catch (err) {
@@ -611,9 +619,8 @@ function wireSocketEvents() {
   });
 }
 
-async function connect({ userToken: token, appToken, mentionFilter: filterOn }) {
+async function connect({ userToken: token, appToken }) {
   userToken = token;
-  mentionFilter = !!filterOn;
   web = new WebClient(userToken);
   try {
     const auth = await web.auth.test();
@@ -749,7 +756,6 @@ function disconnect() {
   web = null;
   userToken = null;
   myUserId = null;
-  mentionFilter = false;
   lastMessageCache.clear();
   userInfoCache.clear();
   mpimNameCache.clear();

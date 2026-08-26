@@ -6,7 +6,6 @@ const slackPairingScreen = document.getElementById('slack-pairing-screen');
 const slackPairingForm = document.getElementById('slack-pairing-form');
 const slackUserTokenInput = document.getElementById('slack-user-token');
 const slackAppTokenInput = document.getElementById('slack-app-token');
-const slackMentionFilterInput = document.getElementById('slack-mention-filter');
 const slackConnectBtn = document.getElementById('slack-connect-btn');
 const slackPairingStatus = document.getElementById('slack-pairing-status');
 const slackDisconnectBtn = document.getElementById('slack-disconnect-btn');
@@ -260,12 +259,11 @@ slackPairingForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const userToken = slackUserTokenInput.value.trim();
   const appToken = slackAppTokenInput.value.trim();
-  const mentionFilter = slackMentionFilterInput.checked;
   if (!userToken || !appToken) return;
   slackConnectBtn.disabled = true;
   slackConnectBtn.textContent = 'Conectando…';
   handleStatus('sl', 'connecting');
-  const res = await window.api.sl.connect(userToken, appToken, mentionFilter);
+  const res = await window.api.sl.connect(userToken, appToken);
   slackConnectBtn.disabled = false;
   slackConnectBtn.textContent = 'Conectar';
   if (!res.ok) {
@@ -284,7 +282,6 @@ slackDisconnectBtn.addEventListener('click', async () => {
   await window.api.sl.disconnect();
   slackUserTokenInput.value = '';
   slackAppTokenInput.value = '';
-  slackMentionFilterInput.checked = false;
   providerData.sl.chats = [];
   providerData.sl.everReady = false;
   closeConversation();

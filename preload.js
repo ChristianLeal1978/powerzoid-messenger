@@ -30,7 +30,7 @@ const sl = {
     ipcRenderer.invoke('sl:sendImage', { chatId, base64, mimetype, filename, caption }),
   getGroupParticipants: (chatId) => ipcRenderer.invoke('sl:getGroupParticipants', chatId),
   reactToMessage: (messageId, emoji, chatId) => ipcRenderer.invoke('sl:reactToMessage', { messageId, emoji, chatId }),
-  connect: (userToken, appToken, mentionFilter) => ipcRenderer.invoke('sl:connect', { userToken, appToken, mentionFilter }),
+  connect: (userToken, appToken) => ipcRenderer.invoke('sl:connect', { userToken, appToken }),
   disconnect: () => ipcRenderer.invoke('sl:disconnect'),
   searchUsers: (query) => ipcRenderer.invoke('sl:searchUsers', query),
   openDirectMessage: (userId) => ipcRenderer.invoke('sl:openDirectMessage', userId),

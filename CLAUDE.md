@@ -108,10 +108,11 @@ menciones, qué `window.api.*` llamar).
   un refresco cuando el canal del mensaje no está en la membresía ya
   conocida, coalescido con `memberChannelsRefreshPromise` para no disparar
   paginaciones paralelas si llegan varios canales nuevos a la vez.
-- **`pushChatListOnce()` solo backfillea DMs 1:1 al conectar; canales y
-  mpim entran solo con actividad en vivo** (`slack.js`) — bug real y
+- **`pushChatListOnce()` backfillea DMs 1:1 y mpim al conectar; canales
+  normales entran solo con actividad en vivo** (`slack.js`) — bug real y
   decisión de producto, ambos encontrados/tomados 2026-08-13 al pasar a
-  token de usuario. Historia completa:
+  token de usuario, con la parte de mpim **revertida el 2026-08-26** (ver
+  nota al final de esta entrada). Historia completa:
   1. Con token de bot la membresía era un puñado de canales invitados a
      mano. Con token de usuario es toda la membresía real — caso real
      visto en vivo: **725** conversaciones.
@@ -184,17 +185,40 @@ menciones, qué `window.api.*` llamar).
      `renderer.js` ahora también corta si `messageElements` ya tiene ese
      id, por si algún día Slack sí llega a hacer eco y habría que evitar
      la burbuja duplicada.
-- **Filtro opcional de menciones:** checkbox en la pantalla de
-  emparejamiento (`mentionFilter`, guardado en las credenciales). Cuando
-  está prendido, `pushChatListOnce()` en `slack.js` deja afuera los
-  canales/mpim cuyo último mensaje no menciona directamente al usuario
-  (`<@ID>` crudo, vía `textMentionsUser()`, contra el `myUserId` resuelto
-  de `auth.test()`); los DMs 1:1 siempre se muestran. Apagado por default
-  (comportamiento sin filtrar). Ojo: desde el punto anterior, esto solo
-  importa para canales/mpim que ya entraron a la lista por actividad en
-  vivo — los que nunca se backfillean tampoco pasan por este filtro, ni
-  falta que hace. Mira solo el último mensaje de cada canal, no todo el
-  historial reciente (ver limitación en README).
+  7. **Reversión parcial (2026-08-26):** el usuario pidió ver siempre sus
+     conversaciones de grupo (mpim), no solo cuando reciben un mensaje en
+     vivo durante la sesión — y en los hechos reportó que una conversación
+     mpim activa (con otras dos personas) había desaparecido de la lista
+     justo después de reiniciar la app, por este mismo motivo: nunca se
+     backfillea, así que sin un mensaje nuevo posterior a la conexión no
+     hay forma de que reaparezca. `backfillUnknownIms()` ahora incluye
+     `is_mpim` junto con `is_im` en el filtro de "todavía no visto" — mismo
+     tope por lote (`UNKNOWN_HISTORY_FETCH_CAP`) y mismo mecanismo de lotes
+     encadenados (cada lote que encuentra algo dispara `pushChatList()` de
+     nuevo, que a su vez vuelve a llamar a `backfillUnknownIms()` para el
+     resto). El riesgo del punto 3 (ver mpim viejos antes que el activo)
+     sigue existiendo mientras el backfill no termine, pero se autocorrige
+     solo en un par de lotes porque la lista final siempre se ordena por
+     timestamp real, no por el orden de `conversations.list`. Los canales
+     normales siguen sin backfillear — ahí no cambia nada, porque el
+     filtro de canales es "solo con @mención" (ver entrada siguiente) y
+     rellenar canales sin mención no serviría de nada.
+- **Filtro de menciones en canales, permanente (cambiado 2026-08-26):**
+  `pushChatListOnce()` en `slack.js` deja afuera los canales normales cuyo
+  último mensaje no menciona directamente al usuario (`<@ID>` crudo, vía
+  `textMentionsUser()`, contra el `myUserId` resuelto de `auth.test()`).
+  Los DMs 1:1 y los mpim (conversación con más de una persona) siempre se
+  muestran, tengan mención o no — son conversación privada por definición,
+  y el usuario quiere verlos apenas alguien escribe ahí, no solo cuando lo
+  mencionan a él con `@`. Antes esto era un checkbox opcional
+  (`mentionFilter`, guardado en las credenciales) apagado por default; se
+  sacó el checkbox y quedó como comportamiento fijo porque el usuario pidió
+  exactamente esto (canales solo con mención directa, grupos siempre
+  visibles) sin querer depender de un ajuste. Ojo: esto solo importa para
+  canales que ya entraron a la lista por actividad en vivo — los que nunca
+  se backfillean tampoco pasan por este filtro, ni falta que hace. Mira
+  solo el último mensaje de cada canal, no todo el historial reciente (ver
+  limitación en README).
 
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho

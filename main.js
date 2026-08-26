@@ -212,9 +212,9 @@ ipcMain.handle('sl:downloadAttachment', async (_e, payload) => {
   return res.ok ? saveAttachmentToDisk(res.base64, res.filename) : res;
 });
 
-ipcMain.handle('sl:connect', async (_e, { userToken, appToken, mentionFilter }) => {
-  const res = await slack.connect({ userToken, appToken, mentionFilter });
-  if (res.ok) saveSlackCredentials({ userToken, appToken, mentionFilter });
+ipcMain.handle('sl:connect', async (_e, { userToken, appToken }) => {
+  const res = await slack.connect({ userToken, appToken });
+  if (res.ok) saveSlackCredentials({ userToken, appToken });
   return res;
 });
 

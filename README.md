@@ -195,13 +195,11 @@ no hay que repetir esto en cada inicio. El engranaje (⚙) junto al buscador,
 visible solo en la pestaña de Slack, permite desconectar y volver a
 emparejar con otros tokens.
 
-Hay un checkbox opcional en esa misma pantalla: **"Solo mostrar DMs y
-canales donde te mencionan directamente"**. Como ahora el token ya es el
-tuyo, la app conoce tu ID de usuario sin que tengas que pegarlo a mano —
-el checkbox solo decide si aplicar el filtro. Los DMs y mensajes directos
-de grupo siempre se muestran sea cual sea el estado del checkbox; lo que
-cambia es si los canales normales entran a la lista solo cuando el último
-mensaje te menciona (`<@tu-id>` crudo) en vez de entrar todos.
+Los canales normales solo entran a la lista cuando el último mensaje te
+menciona directamente (`<@tu-id>` crudo — como ahora el token ya es el
+tuyo, la app conoce tu ID de usuario sin que tengas que pegarlo a mano).
+Los DMs y mensajes directos de grupo (conversación con más de una persona)
+siempre se muestran apenas hay actividad, te mencionen o no.
 
 **Presencia (online/away):** los DMs muestran un punto verde sobre el
 avatar cuando la otra persona está conectada (`users.getPresence`, mismo
