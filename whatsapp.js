@@ -244,7 +244,49 @@ function createClient() {
     send('wa:qr', dataUrl);
   });
 
+  // Bug real, encontrado el 2026-08-28: tras un 'authenticated' válido,
+  // WhatsApp Web queda completamente cargado y sincronizado adentro de
+  // Puppeteer (confirmado inspeccionando la página en vivo: chats reales,
+  // socket CONNECTED, window.WWebJS ya inyectado) pero el evento 'ready' de
+  // whatsapp-web.js nunca se dispara — se cuelga para siempre sin lanzar
+  // ningún error, en algún punto interno entre 'authenticated' y el
+  // 'ready' final de Client.js (mismo terreno que el bug de WhatsApp de
+  // julio 2026 ya documentado en CLAUDE.md, pero bloqueando el propio
+  // 'ready' en vez de getChats()/getChatById()). Reproducido 3 veces con
+  // reinicios limpios, 5+ minutos de espera cada vez.
+  // Mitigación: si 'ready' no llega SEGUNDOS_ESPERA_READY después de
+  // 'authenticated', chequeamos a mano si WhatsApp Web ya está listo
+  // adentro de la página (mismo chequeo que hace la librería) y si es así
+  // completamos el enganche que la librería se salteó — attachEventListeners()
+  // es idempotente (expone funciones "IfAbsent", no duplica nada si ya
+  // estaban) — y disparamos 'ready' nosotros. client.info/client.interface
+  // quedan sin poblar en este camino; no se usan en ningún lado de este
+  // archivo, así que no rompen nada hoy, pero si en el futuro se necesita
+  // alguno de los dos, hay que construirlos acá también.
+  const SEGUNDOS_ESPERA_READY = 20;
+  let readyFired = false;
+  let readyWatchdogTimer = null;
+
+  client.on('authenticated', () => {
+    readyWatchdogTimer = setTimeout(async () => {
+      if (readyFired) return;
+      try {
+        const wwebjsListo = await client.pupPage.evaluate(() => typeof window.WWebJS !== 'undefined');
+        if (!wwebjsListo || readyFired) return;
+        console.error(
+          `[wa] 'ready' no llegó ${SEGUNDOS_ESPERA_READY}s después de 'authenticated' pese a que WhatsApp Web ya está sincronizado — forzando el enganche a mano (ver comentario en attachEventListeners más arriba).`
+        );
+        await client.attachEventListeners();
+        if (!readyFired) client.emit('ready');
+      } catch (err) {
+        console.error('[wa] watchdog de ready falló:', err.message || err);
+      }
+    }, SEGUNDOS_ESPERA_READY * 1000);
+  });
+
   client.on('ready', async () => {
+    readyFired = true;
+    if (readyWatchdogTimer) clearTimeout(readyWatchdogTimer);
     send('wa:status', 'ready');
     await pushChatList();
   });
