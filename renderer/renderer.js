@@ -48,17 +48,26 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 // propio: mío/alerta/error) para no confundir. Se elige de forma
 // determinística por id de autor, así la misma persona siempre tiene el
 // mismo color entre mensajes y al reabrir la conversación.
-// Generados en OKLCH (L=0.75, C=0.13), NO en HSL: dos intentos anteriores
-// con matices repartidos en grados HSL (30° e incluso el mismo 30° con
-// claridad alternada) seguían viéndose "todos parecidos" en la app real
-// (bugs reportados 2026-08-28) — HSL no es perceptualmente uniforme, sobre
-// todo en la franja azul-violeta, así que igual separación en grados HSL
-// no es igual separación visual. OKLCH sí lo es, por eso estos 6 tonos
-// (195°-345° de matiz, evitando las franjas de --accent/--unread/--danger)
-// se ven realmente distintos entre sí y no solo distintos "en la fórmula".
-// Verificado: distancia RGB mínima entre cualquier par ≥47 y contraste
-// ≥6.7:1 contra el fondo de burbuja (#1b2327) para los seis.
-const AUTHOR_COLORS = ['#00c7c7', '#33beeb', '#73b1ff', '#a6a1fd', '#cd94e6', '#e88bc1'];
+// Tomados a mano de la paleta de 16 colores que pasó el usuario (fila x
+// columna de la imagen 2026-08-28), no generados por fórmula — los dos
+// intentos anteriores (HSL parejo, después OKLCH parejo) quedaban todos
+// dentro de la misma familia azul-violeta y seguían leyéndose "todos
+// parecidos" en la app real aunque la distancia numérica entre ellos fuera
+// correcta: dos azules distintos igual se ven "azules" a simple vista. Esta
+// paleta cruza familias de color completas (verde, lima, rosa, cian,
+// amarillo, tan) en vez de variar un solo matiz.
+// De los 16 originales se descartaron 9:
+// - negro, gris pizarra, azul índigo, violeta, marrón (fila1 col1-2,
+//   fila2 col1, fila3 col3, fila4 col1): contraste <3.4:1 contra el fondo
+//   de burbuja (#1b2327), invisibles o casi para texto de 10.5px.
+// - rojo y naranja (fila2 col3, fila4 col2): a menos de 90 y 50 de
+//   distancia RGB de --danger/--unread respectivamente — se confundirían
+//   con el color de error/no-leído, que ya tienen significado propio.
+// - blanco roto (fila1 col4): a solo 19 de distancia RGB de --text, se
+//   vería como texto sin color en vez de un color de autor.
+// Quedan 7, todos con contraste ≥5:1 y separación RGB ≥78 entre sí
+// (silver es el más parecido a tan; el resto está a ≥105).
+const AUTHOR_COLORS = ['#b7c0c6', '#eab98b', '#00a94f', '#84e600', '#f560dc', '#0cd6fb', '#eddc00'];
 // Asignación SECUENCIAL por chat (primer autor visto -> color 0, segundo ->
 // color 1, ...), no por hash del id. La paleta de arriba ya está bien
 // separada por color, pero con solo 6 colores y un hash aplicado a ids
