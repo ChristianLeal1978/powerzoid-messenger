@@ -586,7 +586,14 @@ function renderMessage(msg) {
     ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
     : linkifyHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
   b.innerHTML = `${authorHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
-  b.addEventListener('click', () => toggleReactionBar(wrap, msg.id));
+  b.addEventListener('click', () => {
+    // Ahora que el texto del mensaje es seleccionable (para poder copiarlo),
+    // arrastrar el mouse para seleccionar sigue disparando 'click' al
+    // soltar — sin este chequeo, cada selección togglearía además la barra
+    // de reacciones.
+    if (window.getSelection().toString()) return;
+    toggleReactionBar(wrap, msg.id);
+  });
   // El nombre de autor solo aparece en mensajes de grupo/canal ajenos (ver
   // authorHtml arriba) — clickearlo abre una conversación privada con esa
   // persona, sin togglear la barra de reacciones del mensaje.

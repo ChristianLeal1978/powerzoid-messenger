@@ -413,6 +413,14 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   white-space: pre-wrap;
   background: var(--bg-elevated);
   cursor: pointer;
+  /* La regla global html,body{user-select:none} (arriba) evita que arrastrar
+     la ventana por el borde seleccione texto sin querer, pero también
+     bloqueaba copiar el texto de los mensajes. Lo reactivamos acá; el
+     handler de click en renderMessage() ya chequea si hay selección activa
+     antes de togglear la barra de reacciones, para que seleccionar texto no
+     abra/cierre la barra de paso. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 .bubble.mine { background: var(--accent-soft); }
 .bubble.sticker-bubble { background: none; padding: 0; cursor: pointer; }
