@@ -48,7 +48,19 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 // propio: mío/alerta/error) para no confundir. Se elige de forma
 // determinística por id de autor, así la misma persona siempre tiene el
 // mismo color entre mensajes y al reabrir la conversación.
-const AUTHOR_COLORS = ['#6fa8dc', '#b58fd1', '#5fc9d6', '#e07bb0', '#8888e0', '#c9a86a'];
+// Los 6 tonos están a 30° de separación en el círculo de matices (190° a
+// 340°, azul-celeste a rosa) para que dos personas cualquiera del grupo
+// queden claramente distinguibles — la paleta original tenía tonos a solo
+// 20-30° entre sí (ej. el azul y el cian) que se veían casi idénticos
+// entre dos integrantes de un grupo real (bug reportado 2026-08-28).
+// Claridad pareja al 72% (mismo S=58%): un primer intento alternaba
+// claridad 58%/74% para reforzar la distinción, pero a igual claridad HSL
+// los tonos azul/violeta/magenta quedan mucho más oscuros que los
+// verdes/celestes (por cómo pesa cada canal en la luminancia percibida) —
+// el violeta a 58% terminó con contraste 2.9:1 contra el fondo de la
+// burbuja (#1b2327), ilegible. A 72% parejo todos quedan por encima de
+// 5:1 (bug reportado 2026-08-28, mismo día).
+const AUTHOR_COLORS = ['#8ed3e1', '#8eaae1', '#9c8ee1', '#c58ee1', '#e18ed3', '#e18eaa'];
 function hashString(str) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
