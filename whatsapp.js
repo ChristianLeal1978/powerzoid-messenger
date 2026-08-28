@@ -111,6 +111,26 @@ async function getReactionsSummary(msg) {
   }
 }
 
+async function getQuotedSummary(msg) {
+  if (!msg.hasQuotedMsg) return null;
+  try {
+    // getQuotedMessage() hace un round-trip extra a Puppeteer, pero contra la
+    // colección `Msg` (por mensaje), no `Chat`/`getChatById` — la que está
+    // rota por el bug de julio 2026 documentado en CLAUDE.md. Se paga el
+    // costo solo cuando el mensaje es efectivamente una respuesta.
+    const quoted = await msg.getQuotedMessage();
+    if (!quoted) return null;
+    const authorId = quoted.fromMe ? null : quoted.author || quoted.from;
+    return {
+      body: quoted.body || (quoted.hasMedia ? '📎 Adjunto' : ''),
+      authorName: quoted.fromMe ? 'Tú' : authorId ? await getContactName(authorId) : null,
+    };
+  } catch (err) {
+    console.error('[wa] getQuotedMessage() falló:', err.message || err);
+    return null;
+  }
+}
+
 async function resolveMentionsInBody(msg) {
   // WhatsApp deja las menciones en el texto como "@<número>" (el nombre
   // solo vive en mentionedIds); si no las resolvemos acá, la UI muestra el
@@ -148,6 +168,7 @@ async function serializeMessage(msg) {
     // ajenos (no solo ajenos, pese a lo que sugiere la doc de la librería).
     // Solo resolvemos/mostramos el nombre cuando no es un mensaje propio.
     authorName: msg.author && !msg.fromMe ? await getContactName(msg.author) : null,
+    quoted: await getQuotedSummary(msg),
     hasMedia: msg.hasMedia,
     type: msg.type,
     sticker: msg.type === 'sticker' ? mediaDataUri : null,

@@ -59,17 +59,35 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 // Verificado: distancia RGB mínima entre cualquier par ≥47 y contraste
 // ≥6.7:1 contra el fondo de burbuja (#1b2327) para los seis.
 const AUTHOR_COLORS = ['#00c7c7', '#33beeb', '#73b1ff', '#a6a1fd', '#cd94e6', '#e88bc1'];
-function hashString(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-function colorForAuthor(id) {
+// Asignación SECUENCIAL por chat (primer autor visto -> color 0, segundo ->
+// color 1, ...), no por hash del id. La paleta de arriba ya está bien
+// separada por color, pero con solo 6 colores y un hash aplicado a ids
+// arbitrarios (números de teléfono, ids de Slack), el cumpleaños/pigeonhole
+// garantiza colisiones frecuentes apenas un grupo tiene 4-5 personas activas
+// — probado con ids realistas: de 8 números al azar, 3 caían en el mismo
+// índice. Eso es lo que se seguía viendo como "colores iguales" (bug
+// reportado 2026-08-28) aunque la paleta en sí fuera perfecta: dos personas
+// distintas caían literalmente en el mismo color, no en colores parecidos.
+// Con asignación secuencial por chat, cualquier grupo de hasta 6 personas
+// activas nunca repite color; recién del 7mo integrante en adelante se
+// empieza a reciclar la paleta (ciclo de a 6), que es preferible a repetir
+// por azar antes. Vive en memoria por `chatId` (no persiste a disco): se
+// resetea al reiniciar la app, pero se mantiene estable mientras la app
+// sigue corriendo, incluido cerrar y reabrir la misma conversación.
+const chatAuthorColorAssignments = new Map(); // chatId -> Map<authorId, colorIndex>
+function colorForAuthor(chatId, id) {
   if (!id) return null;
-  return AUTHOR_COLORS[hashString(id) % AUTHOR_COLORS.length];
+  let assignments = chatAuthorColorAssignments.get(chatId);
+  if (!assignments) {
+    assignments = new Map();
+    chatAuthorColorAssignments.set(chatId, assignments);
+  }
+  let idx = assignments.get(id);
+  if (idx === undefined) {
+    idx = assignments.size % AUTHOR_COLORS.length;
+    assignments.set(id, idx);
+  }
+  return AUTHOR_COLORS[idx];
 }
 
 // --- Multi-proveedor (WhatsApp / Slack) ---
@@ -586,16 +604,25 @@ function renderMessage(msg) {
   // authorName solo viene poblado para mensajes de grupo/canal que no son
   // míos (ver serializeMessage() en whatsapp.js/slack.js) — así identificamos
   // quién escribió qué.
-  const authorColor = colorForAuthor(msg.author);
+  const authorColor = colorForAuthor(msg.chatId, msg.author);
   const authorHtml = msg.authorName
     ? `<span class="author"${authorColor ? ` style="color:${authorColor}"` : ''}>${escapeHtml(msg.authorName)}</span>`
+    : '';
+  // Vista previa del mensaje citado (respuesta a otro mensaje del grupo) —
+  // viene de getQuotedMessage() en whatsapp.js, solo para WhatsApp por ahora
+  // (Slack no tiene hilos, ver CLAUDE.md). El truncado a una línea lo hace
+  // el CSS (.quoted-preview), no acá, para no cortar mal texto multibyte.
+  const quotedHtml = msg.quoted
+    ? `<div class="quoted-preview">${
+        msg.quoted.authorName ? `<span class="quoted-author">${escapeHtml(msg.quoted.authorName)}</span>` : ''
+      }<span class="quoted-body">${escapeHtml(msg.quoted.body || '📎 Adjunto')}</span></div>`
     : '';
   const bodyHtml = msg.sticker
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
     : msg.image
     ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
     : linkifyHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
-  b.innerHTML = `${authorHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
+  b.innerHTML = `${authorHtml}${quotedHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
   b.addEventListener('click', () => {
     // Ahora que el texto del mensaje es seleccionable (para poder copiarlo),
     // arrastrar el mouse para seleccionar sigue disparando 'click' al
