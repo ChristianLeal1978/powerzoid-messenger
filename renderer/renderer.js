@@ -48,19 +48,17 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 // propio: mío/alerta/error) para no confundir. Se elige de forma
 // determinística por id de autor, así la misma persona siempre tiene el
 // mismo color entre mensajes y al reabrir la conversación.
-// Los 6 tonos están a 30° de separación en el círculo de matices (190° a
-// 340°, azul-celeste a rosa) para que dos personas cualquiera del grupo
-// queden claramente distinguibles — la paleta original tenía tonos a solo
-// 20-30° entre sí (ej. el azul y el cian) que se veían casi idénticos
-// entre dos integrantes de un grupo real (bug reportado 2026-08-28).
-// Claridad pareja al 72% (mismo S=58%): un primer intento alternaba
-// claridad 58%/74% para reforzar la distinción, pero a igual claridad HSL
-// los tonos azul/violeta/magenta quedan mucho más oscuros que los
-// verdes/celestes (por cómo pesa cada canal en la luminancia percibida) —
-// el violeta a 58% terminó con contraste 2.9:1 contra el fondo de la
-// burbuja (#1b2327), ilegible. A 72% parejo todos quedan por encima de
-// 5:1 (bug reportado 2026-08-28, mismo día).
-const AUTHOR_COLORS = ['#8ed3e1', '#8eaae1', '#9c8ee1', '#c58ee1', '#e18ed3', '#e18eaa'];
+// Generados en OKLCH (L=0.75, C=0.13), NO en HSL: dos intentos anteriores
+// con matices repartidos en grados HSL (30° e incluso el mismo 30° con
+// claridad alternada) seguían viéndose "todos parecidos" en la app real
+// (bugs reportados 2026-08-28) — HSL no es perceptualmente uniforme, sobre
+// todo en la franja azul-violeta, así que igual separación en grados HSL
+// no es igual separación visual. OKLCH sí lo es, por eso estos 6 tonos
+// (195°-345° de matiz, evitando las franjas de --accent/--unread/--danger)
+// se ven realmente distintos entre sí y no solo distintos "en la fórmula".
+// Verificado: distancia RGB mínima entre cualquier par ≥47 y contraste
+// ≥6.7:1 contra el fondo de burbuja (#1b2327) para los seis.
+const AUTHOR_COLORS = ['#00c7c7', '#33beeb', '#73b1ff', '#a6a1fd', '#cd94e6', '#e88bc1'];
 function hashString(str) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
