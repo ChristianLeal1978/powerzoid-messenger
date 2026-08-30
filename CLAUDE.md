@@ -23,13 +23,24 @@ Reportes: github.com/wwebjs/whatsapp-web.js/issues/201845, /201838, /201833
 `package.json` ya no apunta a npm para esta dependencia: apunta al fork con
 el parche de la PR #201832, fijado a un commit concreto:
 ```
-"whatsapp-web.js": "github:wwebjs/whatsapp-web.js#f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761"
+"whatsapp-web.js": "github:wwebjs/whatsapp-web.js#92f443fb6b4fb3ee52c6576bc640b4a2e17379ae"
 ```
-Probado en vivo (2026-08-07): `getChats()` y `getChatById()` funcionan,
-la lista de chats carga y las conversaciones se abren con historial.
-Caveat conocido y no verificado por mí: el autor del parche reportó mensajes
-de grupo que no descifran bien en el teléfono principal — vigilar eso si se
-usan chats de grupo.
+Probado en vivo (2026-08-07, con el commit anterior `f4ea1e3c`): `getChats()`
+y `getChatById()` funcionan, la lista de chats carga y las conversaciones se
+abren con historial. Caveat conocido y no verificado por mí: el autor del
+parche reportó mensajes de grupo que no descifran bien en el teléfono
+principal — vigilar eso si se usan chats de grupo.
+
+**Actualización 2026-08-29:** se movió el pin de `f4ea1e3c` (commit
+intermedio "Run format" del PR) al head actual del PR #201832,
+`92f443fb`, que le mergeó `main` encima — mismo fix (`Base._normalizeId()`
+sigue presente en `node_modules/whatsapp-web.js/src/structures/Base.js`),
+más lo que se actualizó en `main` del fork desde julio. Verificado en este
+punto: npm oficial sigue en `1.34.7` (sin cambios), issues #201845/#201838/
+#201833 y el PR #201832 siguen abiertos/sin mergear, y `npm install` +
+`npm ls` resuelven al commit correcto. **No repetí la prueba en vivo con QR**
+tras este cambio — falta confirmar `getChats()`/`getChatById()` con el
+commit nuevo antes de darlo por completamente probado.
 
 Antes de asumir que este parche sigue haciendo falta o de tocar esto:
 1. `npm view whatsapp-web.js version` — si ya alcanzó o superó lo que trae
