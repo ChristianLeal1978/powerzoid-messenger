@@ -41,6 +41,7 @@ const ui = {
   expandForLightbox: () => ipcRenderer.invoke('win:expandForLightbox'),
   collapseFromLightbox: () => ipcRenderer.invoke('win:collapseFromLightbox'),
   openExternal: (url) => ipcRenderer.invoke('ui:openExternal', url),
+  selectAttachment: () => ipcRenderer.invoke('ui:selectAttachment'),
 };
 
 contextBridge.exposeInMainWorld('api', { wa, sl, ui });

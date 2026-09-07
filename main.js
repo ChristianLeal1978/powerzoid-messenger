@@ -6,6 +6,16 @@ const slack = require('./slack');
 
 const WINDOW_WIDTH = 340; // ancho de la barra lateral. Ajusta a gusto.
 
+// La ventana ya no queda pegada al borde izquierdo (x=0): tapaba/quedaba
+// tapada por el dash de GNOME (el dock vertical de la izquierda, a veces
+// llamado "menú de Fedora"). Estos márgenes la corren después del dock y le
+// dejan aire arriba/abajo. Son valores a ojo del ancho típico del dash —
+// ajústalos acá si en tu escritorio el dock queda más ancho/angosto o si
+// querés más/menos aire.
+const WINDOW_LEFT_MARGIN = 76; // deja libre el dash de GNOME a la izquierda
+const WINDOW_TOP_MARGIN = 16; // margen extra bajo la barra superior de GNOME
+const WINDOW_BOTTOM_MARGIN = 24; // no llega hasta el borde inferior de la pantalla
+
 // skipTaskbar la deja sin ícono en el dock/taskbar, así que sin este atajo
 // no habría forma de traerla de vuelta después de ocultarla.
 const TOGGLE_VISIBILITY_SHORTCUT = 'Control+Alt+W';
@@ -23,9 +33,9 @@ function createWindow() {
 
   win = new BrowserWindow({
     width: WINDOW_WIDTH,
-    height: workArea.height,
-    x: workArea.x,
-    y: workArea.y,
+    height: workArea.height - WINDOW_TOP_MARGIN - WINDOW_BOTTOM_MARGIN,
+    x: workArea.x + WINDOW_LEFT_MARGIN,
+    y: workArea.y + WINDOW_TOP_MARGIN,
     minWidth: 280,
     maxWidth: 480,
     frame: false,
@@ -86,10 +96,30 @@ function saveLastDownloadDir(dir) {
   }
 }
 
+// Extensión -> mimetype para los archivos que se pueden adjuntar. Cubre lo
+// mismo que aceptaba el <input type="file"> que reemplazó
+// ui:selectAttachment (ver más abajo): imágenes comunes + PDF/DOC/DOCX.
+const ATTACHMENT_MIMETYPES = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+
 async function saveAttachmentToDisk(base64, filename) {
   const lastDir = loadLastDownloadDir();
   const defaultPath = lastDir ? path.join(lastDir, filename) : filename;
-  const { canceled, filePath } = await dialog.showSaveDialog(win, { defaultPath });
+  // Sin `win` como parent: la ventana vive angosta y corrida hacia la
+  // izquierda (ver WINDOW_LEFT_MARGIN arriba), así que un diálogo nativo
+  // centrado sobre ella queda con la mitad izquierda fuera de pantalla. Sin
+  // parent, GTK lo centra en la pantalla completa en vez de sobre la
+  // ventana.
+  const { canceled, filePath } = await dialog.showSaveDialog({ defaultPath });
   if (canceled || !filePath) return { ok: false, canceled: true };
   try {
     fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
@@ -185,6 +215,33 @@ ipcMain.handle('ui:openExternal', (_e, url) => {
   }
   shell.openExternal(url);
   return { ok: true };
+});
+
+// --- IPC: elegir archivo para adjuntar ---
+// Antes esto era un <input type="file"> en el renderer: Chromium abre el
+// selector nativo parenteado a `win`, y como la ventana quedó angosta y
+// corrida hacia la izquierda (ver WINDOW_LEFT_MARGIN), el diálogo centrado
+// sobre ella salía con la mitad izquierda fuera de pantalla (bug real,
+// reportado por el usuario). Usar dialog.showOpenDialog() sin `win` como
+// parent lo centra en la pantalla completa en vez de sobre la ventana.
+ipcMain.handle('ui:selectAttachment', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [
+      { name: 'Imágenes y documentos', extensions: Object.keys(ATTACHMENT_MIMETYPES).map((ext) => ext.slice(1)) },
+    ],
+  });
+  if (canceled || !filePaths.length) return { ok: false, canceled: true };
+  const filePath = filePaths[0];
+  const mimetype = ATTACHMENT_MIMETYPES[path.extname(filePath).toLowerCase()];
+  if (!mimetype) return { ok: false }; // extensión fuera del filtro (ej. eligió "Todos los archivos")
+  try {
+    const base64 = fs.readFileSync(filePath).toString('base64');
+    return { ok: true, base64, mimetype, filename: path.basename(filePath) };
+  } catch (err) {
+    console.error('[main] no se pudo leer el archivo adjunto:', err.message || err);
+    return { ok: false };
+  }
 });
 
 // --- IPC: WhatsApp ---

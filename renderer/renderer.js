@@ -27,7 +27,6 @@ const mentionListEl = document.getElementById('mention-list');
 const emojiPickerEl = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
 const attachBtn = document.getElementById('attach-btn');
-const imageInput = document.getElementById('image-input');
 const imagePreviewEl = document.getElementById('image-preview');
 const imagePreviewImg = document.getElementById('image-preview-img');
 const imagePreviewRemove = document.getElementById('image-preview-remove');
@@ -847,31 +846,19 @@ window.api.sl.onIncoming((msg) => handleIncoming('sl', msg));
 backBtn.addEventListener('click', closeConversation);
 
 // --- Adjuntar imagen o documento (PDF, DOC, DOCX) ---
-const DOCUMENT_MIMETYPES = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-]);
 const DOCUMENT_ICONS = { 'application/pdf': '\u{1F4D5}' }; // 📕 para PDF, 📄 genérico para el resto
 
-function isAttachableFile(file) {
-  return !!file && (file.type.startsWith('image/') || DOCUMENT_MIMETYPES.has(file.type));
-}
-
-attachBtn.addEventListener('click', () => imageInput.click());
-
-imageInput.addEventListener('change', () => {
-  const file = imageInput.files[0];
-  imageInput.value = ''; // permite reelegir el mismo archivo después de quitarlo
-  if (!isAttachableFile(file)) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const dataUrl = reader.result;
-    pendingAttachment = { base64: dataUrl.split(',')[1], mimetype: file.type, filename: file.name };
-    showAttachmentPreview(pendingAttachment);
-    composerInput.focus();
-  };
-  reader.readAsDataURL(file);
+// El selector de archivo lo abre el proceso main (dialog.showOpenDialog en
+// ui:selectAttachment) en vez de un <input type="file"> del renderer: ese
+// diálogo nativo quedaba parenteado a esta ventana angosta y corrida hacia
+// la izquierda, así que salía con la mitad izquierda fuera de pantalla (ver
+// comentario en main.js).
+attachBtn.addEventListener('click', async () => {
+  const res = await window.api.ui.selectAttachment();
+  if (!res.ok) return; // cancelado, o el main process ya logueó el error
+  pendingAttachment = { base64: res.base64, mimetype: res.mimetype, filename: res.filename };
+  showAttachmentPreview(pendingAttachment);
+  composerInput.focus();
 });
 
 function showAttachmentPreview(attachment) {
