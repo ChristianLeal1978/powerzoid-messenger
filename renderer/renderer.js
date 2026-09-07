@@ -626,12 +626,16 @@ function renderMessage(msg) {
         msg.quoted.authorName ? `<span class="quoted-author">${escapeHtml(msg.quoted.authorName)}</span>` : ''
       }<span class="quoted-body">${escapeHtml(msg.quoted.body || '📎 Adjunto')}</span></div>`
     : '';
+  // Solo viene poblado para WhatsApp (msg.isForwarded, ver serializeMessage()
+  // en whatsapp.js) — Slack no tiene reenvíos, así que ahí el campo nunca
+  // llega y este bloque no se renderiza.
+  const forwardedHtml = msg.forwarded ? `<span class="forwarded-label">↪ Reenviado</span>` : '';
   const bodyHtml = msg.sticker
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
     : msg.image
     ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
     : linkifyHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
-  b.innerHTML = `${authorHtml}${quotedHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
+  b.innerHTML = `${authorHtml}${forwardedHtml}${quotedHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
   b.addEventListener('click', () => {
     // Ahora que el texto del mensaje es seleccionable (para poder copiarlo),
     // arrastrar el mouse para seleccionar sigue disparando 'click' al

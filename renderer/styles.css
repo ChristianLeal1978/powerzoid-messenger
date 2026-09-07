@@ -441,6 +441,13 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   cursor: pointer;
 }
 .bubble .author:hover { text-decoration: underline; }
+.forwarded-label {
+  display: block;
+  font-size: 10px;
+  font-style: italic;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
 .quoted-preview {
   display: block;
   border-left: 2px solid var(--border);

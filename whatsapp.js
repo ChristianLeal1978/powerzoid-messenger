@@ -169,6 +169,7 @@ async function serializeMessage(msg) {
     // Solo resolvemos/mostramos el nombre cuando no es un mensaje propio.
     authorName: msg.author && !msg.fromMe ? await getContactName(msg.author) : null,
     quoted: await getQuotedSummary(msg),
+    forwarded: !!msg.isForwarded,
     hasMedia: msg.hasMedia,
     type: msg.type,
     sticker: msg.type === 'sticker' ? mediaDataUri : null,
