@@ -230,7 +230,8 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   color: var(--text-dim);
   font-size: 12.5px;
 }
-.people-results { border-top: 1px solid var(--border); }
+.people-results,
+.channel-results { border-top: 1px solid var(--border); }
 .people-results-header {
   padding: 8px 16px 4px;
   font-size: 10.5px;

@@ -18,6 +18,15 @@ let myUserId = null;
 // conversación privada por definición. Antes esto era un checkbox opcional
 // en la pantalla de emparejamiento; el usuario pidió que "canales solo con
 // @mención" fuera siempre así, sin depender de un ajuste (2026-08-26).
+//
+// Elegido a mano por el usuario con el buscador de canales (searchChannels()
+// + openChannel()), para comentar en un canal sin esperar una @mención (ej.
+// #editorial). Una vez elegido, se queda visible el resto de la sesión aunque
+// su último mensaje no te mencione — igual que un DM, es una elección
+// explícita de "quiero ver esto", no algo que deba desaparecer solo. En
+// memoria nomás: se vacía en cada reinicio, momento en que vuelve a aparecer
+// solo si ya cumple el filtro normal o se lo vuelve a elegir.
+const manuallyOpenedChannels = new Set();
 
 function textMentionsUser(rawText, userId) {
   if (!userId || !rawText) return false;
@@ -491,9 +500,14 @@ async function pushChatListOnce() {
     // "conversación privada" por definición — siempre se muestran. Los
     // canales normales solo entran si el último mensaje menciona
     // directamente a la persona (ver textMentionsUser()).
-    const relevant = withMeta.filter(
-      ({ channel, meta }) => meta.timestamp > 0 && (channel.is_im || channel.is_mpim || meta.mentionsMe)
-    );
+    const relevant = withMeta.filter(({ channel, meta }) => {
+      // Un canal elegido a mano se muestra igual, aunque no tenga un solo
+      // mensaje todavía (recién abierto para escribir el primero) — el resto
+      // de los casos sí exige timestamp > 0 (ver comentario en
+      // resolveConversationMeta() sobre por qué existe esa marca).
+      if (manuallyOpenedChannels.has(channel.id)) return true;
+      return meta.timestamp > 0 && (channel.is_im || channel.is_mpim || meta.mentionsMe);
+    });
     const list = relevant.slice(0, 60).map(({ channel, meta }) => ({
       id: channel.id,
       name: meta.name,
@@ -756,6 +770,54 @@ async function openDirectMessage(userId) {
   }
 }
 
+// --- Buscador de canales, para abrir uno sin esperar a que aparezca solo
+// por @mención (ver comentario de manuallyOpenedChannels más arriba) — ej.
+// comentar algo en #editorial sin que nadie te haya mencionado ahí. Solo
+// busca en canales normales (públicos/privados) donde ya eres miembro; DMs
+// van por searchUsers() y mpim no tienen nombre propio para buscar por texto
+// (ver getMpimName()).
+async function searchChannels(query) {
+  if (!web) return { ok: false, channels: [] };
+  const q = (query || '').trim().toLowerCase().replace(/^#/, '');
+  if (!q) return { ok: true, channels: [] };
+  try {
+    const channels = await getMemberChannels();
+    const matches = channels
+      .filter((c) => !c.is_im && !c.is_mpim && (c.name || '').toLowerCase().includes(q))
+      .slice(0, 20)
+      .map((c) => ({ id: c.id, name: c.name }));
+    return { ok: true, channels: matches };
+  } catch (err) {
+    console.error('[sl] searchChannels() falló:', err.message || err);
+    return { ok: false, channels: [] };
+  }
+}
+
+async function openChannel(channelId) {
+  if (!web) return { ok: false };
+  try {
+    const channels = await getMemberChannels();
+    const channel = channels.find((c) => c.id === channelId);
+    if (!channel) return { ok: false };
+    manuallyOpenedChannels.add(channelId);
+    const meta = await resolveConversationMeta(channel);
+    const chat = {
+      id: channel.id,
+      name: meta.name,
+      isGroup: true,
+      unreadCount: 0,
+      lastMessage: meta.lastMessage,
+      timestamp: meta.timestamp || Math.floor(Date.now() / 1000),
+      avatar: meta.avatar,
+    };
+    pushChatList();
+    return { ok: true, chat };
+  } catch (err) {
+    console.error('[sl] openChannel() falló:', err.message || err);
+    return { ok: false };
+  }
+}
+
 function disconnect() {
   if (socket) {
     try {
@@ -776,6 +838,7 @@ function disconnect() {
   presenceCache.clear();
   memberChannelsCache = null;
   memberChannelsFetchedAt = 0;
+  manuallyOpenedChannels.clear();
   userDirectoryCache = null;
   userDirectoryFetchedAt = 0;
   send('sl:status', 'not-configured');
@@ -919,5 +982,7 @@ module.exports = {
   getGroupParticipants,
   searchUsers,
   openDirectMessage,
+  searchChannels,
+  openChannel,
   downloadAttachment,
 };

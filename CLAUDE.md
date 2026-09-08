@@ -257,6 +257,24 @@ menciones, qué `window.api.*` llamar).
   se backfillean tampoco pasan por este filtro, ni falta que hace. Mira
   solo el último mensaje de cada canal, no todo el historial reciente (ver
   limitación en README).
+- **Buscador de canales (agregado 2026-09-08):** el filtro de menciones de
+  arriba significa que un canal donde nadie te mencionó nunca aparece solo
+  — el usuario reportó necesitar comentar en #editorial sin esperar eso.
+  El mismo buscador de chats (icono 🔍) que ya buscaba personas del
+  workspace (`searchUsers()`/`openDirectMessage()`) ahora también busca
+  canales por nombre (`searchChannels()` en `slack.js`, sección "Canales"
+  en `renderer.js`) entre los canales donde el usuario YA es miembro — no
+  pagina el workspace completo buscando canales ajenos, sería el mismo
+  costo de `listAllConversations()` en cada tecla. Elegir uno
+  (`openChannel()`) lo agrega a `manuallyOpenedChannels` (Set en memoria,
+  se vacía en cada reinicio) para que `pushChatListOnce()` lo siga
+  mostrando el resto de la sesión aunque su último mensaje no te mencione
+  — si no, desaparecería de la lista apenas llegara cualquier otro mensaje
+  en cualquier chat y disparara un refresco, porque tu propio comentario
+  tampoco cuenta como mención (`recordOwnMessage()` fija `mentionsMe:
+  false`). También se lo excluye del requisito de `timestamp > 0` (canal
+  recién abierto sin un solo mensaje todavía se puede seguir mostrando
+  para escribir el primero).
 
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho

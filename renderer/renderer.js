@@ -387,46 +387,58 @@ function renderChatList() {
     });
   }
   // Slack: si hay una búsqueda activa y ya trajimos resultados de personas
-  // del workspace (ver updateSlackPeopleSearch()), se re-pintan acá porque
-  // chatListEl.innerHTML se acaba de vaciar arriba. No dispara un nuevo
-  // pedido — solo redibuja lo último que ya llegó.
-  if (activeProvider === 'sl' && chatSearchQuery.trim() && lastPeopleResults.length) {
-    renderPeopleResults(lastPeopleResults);
+  // y/o canales del workspace (ver updateSlackDirectorySearch()), se
+  // re-pintan acá porque chatListEl.innerHTML se acaba de vaciar arriba. No
+  // dispara un nuevo pedido — solo redibuja lo último que ya llegó.
+  if (activeProvider === 'sl' && chatSearchQuery.trim()) {
+    if (lastPeopleResults.length) renderPeopleResults(lastPeopleResults);
+    if (lastChannelResults.length) renderChannelResults(lastChannelResults);
   }
 }
 
-// --- Slack: buscar personas del workspace cuando la búsqueda de chats no
-// encuentra nada (o para abrir un DM nuevo con alguien sin conversación
+// --- Slack: buscar personas y canales del workspace cuando la búsqueda de
+// chats no encuentra nada (o para abrir un DM/canal nuevo sin conversación
 // previa) ---
 let peopleSearchTimer = null;
 let peopleSearchToken = 0;
 let lastPeopleResults = [];
+let lastChannelResults = [];
 
-function scheduleSlackPeopleSearch() {
+function scheduleSlackDirectorySearch() {
   if (activeProvider !== 'sl') return;
   clearTimeout(peopleSearchTimer);
-  peopleSearchTimer = setTimeout(updateSlackPeopleSearch, 300);
+  peopleSearchTimer = setTimeout(updateSlackDirectorySearch, 300);
 }
 
-async function updateSlackPeopleSearch() {
+async function updateSlackDirectorySearch() {
   const q = chatSearchQuery.trim();
   if (activeProvider !== 'sl' || !q) {
     lastPeopleResults = [];
+    lastChannelResults = [];
     removePeopleResults();
+    removeChannelResults();
     return;
   }
   const token = ++peopleSearchToken;
-  const res = await window.api.sl.searchUsers(q);
+  const [peopleRes, channelsRes] = await Promise.all([window.api.sl.searchUsers(q), window.api.sl.searchChannels(q)]);
   // Si mientras esperábamos la respuesta cambiaron de pestaña o siguieron
   // escribiendo, este resultado ya es viejo — no lo pintamos.
   if (token !== peopleSearchToken || activeProvider !== 'sl' || chatSearchQuery.trim() !== q) return;
-  lastPeopleResults = res.ok ? res.users : [];
+  lastPeopleResults = peopleRes.ok ? peopleRes.users : [];
+  lastChannelResults = channelsRes.ok ? channelsRes.channels : [];
   if (lastPeopleResults.length) renderPeopleResults(lastPeopleResults);
   else removePeopleResults();
+  if (lastChannelResults.length) renderChannelResults(lastChannelResults);
+  else removeChannelResults();
 }
 
 function removePeopleResults() {
   const existing = chatListEl.querySelector('.people-results');
+  if (existing) existing.remove();
+}
+
+function removeChannelResults() {
+  const existing = chatListEl.querySelector('.channel-results');
   if (existing) existing.remove();
 }
 
@@ -472,6 +484,47 @@ async function startSlackDirectMessage(userId, name) {
   openChat(res.chat.id, name);
 }
 
+function renderChannelResults(channels) {
+  removeChannelResults();
+  const section = document.createElement('div');
+  section.className = 'channel-results';
+  const header = document.createElement('div');
+  header.className = 'people-results-header';
+  header.textContent = 'Canales';
+  section.appendChild(header);
+  channels.forEach((c) => {
+    const row = document.createElement('div');
+    row.className = 'chat-row';
+    row.innerHTML = `
+      <div class="avatar">${initials(c.name)}</div>
+      <div class="chat-meta">
+        <div class="chat-name">#${escapeHtml(c.name)}</div>
+        <div class="chat-snippet">Abrir canal</div>
+      </div>
+    `;
+    row.addEventListener('click', () => startSlackChannel(c.id, c.name));
+    section.appendChild(row);
+  });
+  chatListEl.appendChild(section);
+}
+
+async function startSlackChannel(channelId, name) {
+  lastChannelResults = [];
+  const res = await window.api.sl.openChannel(channelId);
+  if (!res.ok) {
+    chatListStatus.textContent = 'No se pudo abrir el canal.';
+    chatListStatus.classList.remove('hidden');
+    return;
+  }
+  chatListStatus.classList.add('hidden');
+  closeChatSearch();
+  if (!providerData.sl.chats.some((c) => c.id === res.chat.id)) {
+    providerData.sl.chats = [res.chat, ...providerData.sl.chats];
+    if (activeProvider === 'sl') chats = providerData.sl.chats;
+  }
+  openChat(res.chat.id, name);
+}
+
 // --- Buscador de chats ---
 function openChatSearch() {
   topbarTitle.classList.add('hidden');
@@ -490,6 +543,7 @@ function closeChatSearch() {
   chatSearchQuery = '';
   clearTimeout(peopleSearchTimer);
   lastPeopleResults = [];
+  lastChannelResults = [];
   renderChatList();
 }
 
@@ -506,7 +560,7 @@ chatSearchClearBtn.addEventListener('click', closeChatSearch);
 chatSearchInput.addEventListener('input', () => {
   chatSearchQuery = chatSearchInput.value;
   renderChatList();
-  scheduleSlackPeopleSearch();
+  scheduleSlackDirectorySearch();
 });
 
 chatSearchInput.addEventListener('keydown', (e) => {

@@ -264,6 +264,8 @@ ipcMain.handle('sl:reactToMessage', (_e, payload) => slack.reactToMessage(payloa
 ipcMain.handle('sl:getGroupParticipants', (_e, chatId) => slack.getGroupParticipants(chatId));
 ipcMain.handle('sl:searchUsers', (_e, query) => slack.searchUsers(query));
 ipcMain.handle('sl:openDirectMessage', (_e, userId) => slack.openDirectMessage(userId));
+ipcMain.handle('sl:searchChannels', (_e, query) => slack.searchChannels(query));
+ipcMain.handle('sl:openChannel', (_e, channelId) => slack.openChannel(channelId));
 ipcMain.handle('sl:downloadAttachment', async (_e, payload) => {
   const res = await slack.downloadAttachment(payload);
   return res.ok ? saveAttachmentToDisk(res.base64, res.filename) : res;
