@@ -1,5 +1,6 @@
 const { app } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const https = require('https');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
@@ -12,6 +13,60 @@ let send; // (channel, payload) => void, inyectado desde main.js
 // repetir consultas al Store por cada mensaje/refresco de la lista.
 const contactNameCache = new Map();
 const avatarCache = new Map();
+
+// Nombre mostrado en la lista de chats, cacheado por chat id y persistido a
+// disco. Bug real reportado por el usuario: al reabrir la app, los
+// contactos con los que no había actividad ESE día se veían como número en
+// vez de nombre — solo los chats con mensajes recientes tenían nombre. Causa:
+// c.name sale del Store interno de WhatsApp Web, que recién arranca a
+// sincronizarse cuando dispara 'ready'; pushChatListOnce() llama a
+// getChats() ahí mismo, así que para un chat sin actividad reciente (que el
+// Store tarda más en hidratar/no prioriza) c.name todavía viene vacío en
+// ese primer push, y sin caché entre sesiones caía directo al número sin
+// forma de recuperarse hasta que ese chat tuviera un mensaje nuevo. Con el
+// caché persistido, el nombre visto en una sesión anterior sobrevive al
+// reinicio y tapa ese hueco de sincronización.
+const chatNameCache = new Map();
+let chatNameCacheDirty = false;
+let chatNameCacheSaveTimer = null;
+
+function chatNameCachePath() {
+  return path.join(app.getPath('userData'), 'chat-name-cache.json');
+}
+
+// Lazy: app.getPath('userData') no es seguro llamarlo en tiempo de carga
+// del módulo, y whatsapp.js se require()ea antes de app.whenReady() en
+// main.js. Se carga una sola vez, en el primer uso real (dentro de
+// createClient(), que ya corre después de 'ready').
+let chatNameCacheLoaded = false;
+
+function loadChatNameCache() {
+  if (chatNameCacheLoaded) return;
+  chatNameCacheLoaded = true;
+  try {
+    const data = JSON.parse(fs.readFileSync(chatNameCachePath(), 'utf8'));
+    for (const [id, name] of Object.entries(data)) chatNameCache.set(id, name);
+  } catch (err) {
+    // Primera vez, o archivo inexistente/corrupto: arrancamos con caché vacío.
+  }
+}
+
+// Debounced: pushChatListOnce() corre en cada mensaje, y sin agrupar las
+// escrituras cada mensaje dispararía su propio fs.writeFileSync.
+function scheduleChatNameCacheSave() {
+  chatNameCacheDirty = true;
+  if (chatNameCacheSaveTimer) return;
+  chatNameCacheSaveTimer = setTimeout(() => {
+    chatNameCacheSaveTimer = null;
+    if (!chatNameCacheDirty) return;
+    chatNameCacheDirty = false;
+    try {
+      fs.writeFileSync(chatNameCachePath(), JSON.stringify(Object.fromEntries(chatNameCache)));
+    } catch (err) {
+      console.error('[wa] no se pudo guardar el caché de nombres de chat:', err.message || err);
+    }
+  }, 5000);
+}
 
 async function getContactName(id) {
   if (!id) return null;
@@ -215,15 +270,21 @@ async function pushChatListOnce() {
       chats
         .filter((c) => !c.archived)
         .slice(0, 60)
-        .map(async (c) => ({
-          id: c.id._serialized,
-          name: c.name || c.id.user,
-          isGroup: c.isGroup,
-          unreadCount: c.unreadCount,
-          lastMessage: c.lastMessage ? c.lastMessage.body : '',
-          timestamp: c.timestamp,
-          avatar: await getAvatar(c.id._serialized),
-        }))
+        .map(async (c) => {
+          if (c.name && chatNameCache.get(c.id._serialized) !== c.name) {
+            chatNameCache.set(c.id._serialized, c.name);
+            scheduleChatNameCacheSave();
+          }
+          return {
+            id: c.id._serialized,
+            name: chatNameCache.get(c.id._serialized) || c.id.user,
+            isGroup: c.isGroup,
+            unreadCount: c.unreadCount,
+            lastMessage: c.lastMessage ? c.lastMessage.body : '',
+            timestamp: c.timestamp,
+            avatar: await getAvatar(c.id._serialized),
+          };
+        })
     );
     if (!list.length && emptyListRetries < 8) {
       // Justo después de vincular un dispositivo nuevo, el cliente puede
@@ -252,6 +313,7 @@ async function pushChatListOnce() {
 }
 
 function createClient() {
+  loadChatNameCache();
   client = new Client({
     authStrategy: new LocalAuth({
       dataPath: path.join(app.getPath('userData'), 'wwebjs_auth'),
