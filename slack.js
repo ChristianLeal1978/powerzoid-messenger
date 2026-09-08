@@ -260,7 +260,15 @@ function loadLastMessageCache() {
   lastMessageCacheLoaded = true;
   try {
     const data = JSON.parse(fs.readFileSync(lastMessageCachePath(), 'utf8'));
-    for (const [id, entry] of Object.entries(data)) lastMessageCache.set(id, entry);
+    for (const [id, entry] of Object.entries(data)) {
+      // Formato viejo (2026-09-08, antes de guardar name/avatar acá): sin
+      // nombre, resolveConversationMeta() lo trataría igual como "conocido"
+      // pero necesitaría pedir nombre/avatar a la API de todos modos — mejor
+      // dejarlo afuera del todo y que entre por backfillUnknownIms() (que sí
+      // reparte esos pedidos con pausa) en vez de en el fan-out sin límite
+      // de pushChatListOnce().
+      if (entry && entry.name !== undefined) lastMessageCache.set(id, entry);
+    }
   } catch (err) {
     // Primera vez, o archivo inexistente/corrupto: arrancamos con caché vacío.
   }
@@ -308,6 +316,25 @@ async function getPresence(userId) {
 }
 
 async function resolveConversationMeta(c) {
+  // Camino rápido: si ya tenemos nombre/avatar cacheados (de esta sesión o
+  // persistidos de una anterior, ver scheduleLastMessageCacheSave()), no se
+  // pide NADA a la API — ni users.info, ni users.getPresence, ni
+  // conversations.history. Bug real (2026-09-08): antes esto solo cortaba
+  // el pedido de historial, pero seguía resolviendo nombre/avatar/presencia
+  // por canal en cada llamada. Con el caché persistido a disco, el primer
+  // pushChatListOnce() tras reconectar puede tener cientos de canales "ya
+  // conocidos" a la vez, y sin este atajo eso disparaba cientos de llamadas
+  // en paralelo sin límite — Slack las rate-limitaba en bloque y la lista
+  // no se mandaba hasta que TODAS (con sus reintentos) terminaban: la app
+  // tardaba más en mostrar los chats que sin caché en absoluto. La
+  // presencia de un DM cacheado así queda en null (sin punto de "conectado")
+  // hasta que algo más dispare getPresence() para esa persona — mejor eso
+  // que bloquear el primer render.
+  const cached = lastMessageCache.get(c.id);
+  if (cached && cached.name !== undefined) {
+    const online = c.is_im ? presenceCache.get(c.user)?.online ?? null : null;
+    return { name: cached.name, avatar: cached.avatar, lastMessage: cached.text, timestamp: cached.ts, mentionsMe: cached.mentionsMe, online };
+  }
   let name;
   let avatar = null;
   let online = null;
@@ -320,10 +347,6 @@ async function resolveConversationMeta(c) {
     name = await getMpimName(c.id);
   } else {
     name = c.name || c.id;
-  }
-  const cached = lastMessageCache.get(c.id);
-  if (cached) {
-    return { name, avatar, lastMessage: cached.text, timestamp: cached.ts, mentionsMe: cached.mentionsMe, online };
   }
   let lastMessage = '';
   let timestamp = 0;
@@ -349,7 +372,7 @@ async function resolveConversationMeta(c) {
   // siempre, y la lista de Slack no cargaba nada. timestamp 0 marca "sin
   // mensaje real"; pushChatListOnce() lo usa para no mostrar estos chats
   // vacíos en la lista.
-  lastMessageCache.set(c.id, { text: lastMessage, ts: timestamp, mentionsMe });
+  lastMessageCache.set(c.id, { text: lastMessage, ts: timestamp, mentionsMe, name, avatar });
   scheduleLastMessageCacheSave();
   return { name, avatar, lastMessage, timestamp, mentionsMe, online };
 }
@@ -654,6 +677,7 @@ function wireSocketEvents() {
       const mentionsMe = textMentionsUser(event.text, myUserId);
       const serialized = await serializeMessage(event, event.channel);
       lastMessageCache.set(event.channel, {
+        ...lastMessageCache.get(event.channel), // conserva name/avatar ya resueltos, si los hay
         text: serialized.body,
         ts: serialized.timestamp,
         mentionsMe,
@@ -938,7 +962,12 @@ async function recordOwnMessage(chatId, ts, text) {
   if (!ts) return;
   try {
     const serialized = await serializeMessage({ ts, user: myUserId, text }, chatId);
-    lastMessageCache.set(chatId, { text: serialized.body, ts: serialized.timestamp, mentionsMe: false });
+    lastMessageCache.set(chatId, {
+      ...lastMessageCache.get(chatId), // conserva name/avatar ya resueltos, si los hay
+      text: serialized.body,
+      ts: serialized.timestamp,
+      mentionsMe: false,
+    });
     scheduleLastMessageCacheSave();
     send('sl:incoming', serialized);
     pushChatList();
@@ -972,7 +1001,12 @@ async function sendImage({ chatId, base64, mimetype, filename, caption }) {
     // chat.postMessage — al menos actualizamos el preview de la lista con
     // la hora actual, aunque no dispare sl:incoming (la imagen ya se ve en
     // el picker antes de mandarla, no es tan crítico como el texto).
-    lastMessageCache.set(chatId, { text: caption || '📷 Imagen', ts: Math.floor(Date.now() / 1000), mentionsMe: false });
+    lastMessageCache.set(chatId, {
+      ...lastMessageCache.get(chatId), // conserva name/avatar ya resueltos, si los hay
+      text: caption || '📷 Imagen',
+      ts: Math.floor(Date.now() / 1000),
+      mentionsMe: false,
+    });
     scheduleLastMessageCacheSave();
     pushChatList();
     return { ok: true };

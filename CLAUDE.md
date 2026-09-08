@@ -295,6 +295,30 @@ menciones, qué `window.api.*` llamar).
   pisaría el archivo con un objeto vacío. Ojo: no se podó del archivo lo que
   ya no es válido (canales de los que el usuario salió, etc.) — entradas
   viejas quedan ahí sin usarse, mismo criterio que `chat-name-cache.json`.
+  **Bug real introducido por este mismo cambio, arreglado el mismo día:**
+  el primer intento solo persistía `{text, ts, mentionsMe}` — el nombre,
+  avatar y presencia de cada chat se seguían resolviendo con `users.info`/
+  `getAvatar()`/`users.getPresence()` en `resolveConversationMeta()` en
+  CADA llamada, cache de mensaje o no. Antes de persistir a disco, el
+  "conocido" (`known` en `pushChatListOnce()`) casi siempre arrancaba vacío
+  en un reinicio, así que esto no se notaba. Con el caché persistido,
+  `known` puede tener cientos de canales de entrada, y `Promise.all` los
+  resuelve todos EN PARALELO sin ningún límite — cientos de llamadas
+  simultáneas a la Web API, Slack las rate-limita en bloque, y como
+  `pushChatListOnce()` no manda nada hasta que el `Promise.all` completo
+  termina (reintentos incluidos), el resultado fue el opuesto a lo buscado:
+  la lista tardaba MÁS en aparecer que sin el caché. Confirmado en vivo por
+  el usuario. Fix: `resolveConversationMeta()` ahora persiste también
+  `name`/`avatar` en la entrada de `lastMessageCache`, y si ya están ahí
+  corta de entrada sin pedir nada a la API (la presencia queda en null para
+  ese primer render — se resuelve sola más adelante si algo más dispara
+  `getPresence()` para esa persona). Los otros tres puntos que escriben
+  `lastMessageCache` (evento en vivo, `recordOwnMessage()`, `sendImage()`)
+  ahora hacen spread del registro previo (`...lastMessageCache.get(id)`)
+  para no pisar el `name`/`avatar` ya resueltos. `loadLastMessageCache()`
+  descarta al cargar cualquier entrada del formato viejo (sin `name`) que
+  haya quedado en el archivo del primer intento, para no repetir el mismo
+  atasco una vez más con datos ya guardados en ese formato.
 
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho
