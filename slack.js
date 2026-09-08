@@ -701,6 +701,7 @@ function wireSocketEvents() {
 }
 
 async function connect({ userToken: token, appToken }) {
+  loadLastMessageCache();
   userToken = token;
   web = new WebClient(userToken);
   try {
@@ -885,6 +886,21 @@ function disconnect() {
   web = null;
   userToken = null;
   myUserId = null;
+  // Si había una escritura debounced pendiente (ver scheduleLastMessageCacheSave()),
+  // la escribimos ahora mismo antes de limpiar el Map — si no, ese timeout
+  // dispararía DESPUÉS del clear() de acá abajo y pisaría el archivo con un
+  // objeto vacío, perdiendo todo lo que se quería persistir para el próximo
+  // arranque.
+  clearTimeout(lastMessageCacheSaveTimer);
+  lastMessageCacheSaveTimer = null;
+  if (lastMessageCacheDirty) {
+    lastMessageCacheDirty = false;
+    try {
+      fs.writeFileSync(lastMessageCachePath(), JSON.stringify(Object.fromEntries(lastMessageCache)));
+    } catch (err) {
+      console.error('[sl] no se pudo guardar el caché de últimos mensajes al desconectar:', err.message || err);
+    }
+  }
   lastMessageCache.clear();
   userInfoCache.clear();
   mpimNameCache.clear();
@@ -923,6 +939,7 @@ async function recordOwnMessage(chatId, ts, text) {
   try {
     const serialized = await serializeMessage({ ts, user: myUserId, text }, chatId);
     lastMessageCache.set(chatId, { text: serialized.body, ts: serialized.timestamp, mentionsMe: false });
+    scheduleLastMessageCacheSave();
     send('sl:incoming', serialized);
     pushChatList();
   } catch (err) {
@@ -956,6 +973,7 @@ async function sendImage({ chatId, base64, mimetype, filename, caption }) {
     // la hora actual, aunque no dispare sl:incoming (la imagen ya se ve en
     // el picker antes de mandarla, no es tan crítico como el texto).
     lastMessageCache.set(chatId, { text: caption || '📷 Imagen', ts: Math.floor(Date.now() / 1000), mentionsMe: false });
+    scheduleLastMessageCacheSave();
     pushChatList();
     return { ok: true };
   } catch (err) {

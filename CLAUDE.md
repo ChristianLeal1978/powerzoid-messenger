@@ -275,6 +275,26 @@ menciones, qué `window.api.*` llamar).
   false`). También se lo excluye del requisito de `timestamp > 0` (canal
   recién abierto sin un solo mensaje todavía se puede seguir mostrando
   para escribir el primero).
+- **`lastMessageCache` persistido a disco (agregado 2026-09-08):** ya se
+  sabía (punto 8 de la entrada de `pushChatListOnce()`/backfill de arriba)
+  que este caché vive solo en memoria y por eso el backfill lento se repite
+  en cada reinicio — quedó anotado ahí como algo a evaluar "si esto vuelve a
+  molestar". Molestó: el usuario reportó que al reiniciar la app tardaba
+  mucho en volver a mostrar los últimos chats. Se guarda en
+  `slack-chat-cache.json` dentro de `userData` (mismo patrón que
+  `chat-name-cache.json` de `whatsapp.js`), con `scheduleLastMessageCacheSave()`
+  (debounce de 5s) en cada punto donde se escribe `lastMessageCache` — la
+  actualización en vivo por Socket Mode, el reflejo de mensajes propios
+  (`recordOwnMessage()`/`sendImage()`) y `resolveConversationMeta()`. Se
+  carga una sola vez, en `connect()` (no al cargar el módulo — `slack.js` se
+  require()ea antes de `app.whenReady()`, y `app.getPath()` no es seguro
+  llamarlo tan temprano). `disconnect()` (el botón "Desconectar Slack", que
+  borra tokens para forzar volver a pegarlos) vuelca a disco cualquier
+  escritura pendiente ANTES de vaciar el Map en memoria — si el orden fuera
+  al revés, el timeout debounced dispararía después con el Map ya vacío y
+  pisaría el archivo con un objeto vacío. Ojo: no se podó del archivo lo que
+  ya no es válido (canales de los que el usuario salió, etc.) — entradas
+  viejas quedan ahí sin usarse, mismo criterio que `chat-name-cache.json`.
 
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho
