@@ -1,3 +1,6 @@
+const { app } = require('electron');
+const path = require('path');
+const fs = require('fs');
 const https = require('https');
 const { WebClient } = require('@slack/web-api');
 const { SocketModeClient } = require('@slack/socket-mode');
@@ -229,7 +232,57 @@ async function serializeMessage(msg, channelId) {
 // Socket Mode. Evita tener que pedir conversations.history por cada canal
 // en cada refresco de la lista (son rate-limited por método) — solo se pide
 // una vez, la primera vez que vemos ese canal.
+//
+// Persistido a disco (bug real reportado por el usuario, 2026-09-08): este
+// caché vive solo en memoria, así que en cada reinicio queda vacío y
+// pushChatListOnce() no tiene "conocidos" que mostrar de entrada — todo pasa
+// por backfillUnknownIms(), que es lento a propósito (lotes con pausa +
+// reintentos de rate-limit, ver nota del 2026-08-26 en CLAUDE.md sobre el
+// caso real de 687 conversaciones desconocidas tardando varios minutos).
+// Guardando lo último conocido, el próximo arranque muestra de inmediato lo
+// que ya se vio en la sesión anterior mientras el backfill (si hace falta)
+// sigue corriendo atrás para ponerse al día.
 const lastMessageCache = new Map();
+let lastMessageCacheLoaded = false;
+let lastMessageCacheDirty = false;
+let lastMessageCacheSaveTimer = null;
+
+function lastMessageCachePath() {
+  return path.join(app.getPath('userData'), 'slack-chat-cache.json');
+}
+
+// Lazy, igual que el caché de nombres de chat de whatsapp.js: se carga una
+// sola vez, en connect() — no al cargar el módulo, porque slack.js se
+// require()ea antes de app.whenReady() en main.js y app.getPath() no es
+// seguro llamarlo tan temprano.
+function loadLastMessageCache() {
+  if (lastMessageCacheLoaded) return;
+  lastMessageCacheLoaded = true;
+  try {
+    const data = JSON.parse(fs.readFileSync(lastMessageCachePath(), 'utf8'));
+    for (const [id, entry] of Object.entries(data)) lastMessageCache.set(id, entry);
+  } catch (err) {
+    // Primera vez, o archivo inexistente/corrupto: arrancamos con caché vacío.
+  }
+}
+
+// Debounced: los eventos en vivo de Socket Mode pueden llegar varios por
+// segundo en un canal activo, y sin agrupar las escrituras cada uno
+// dispararía su propio fs.writeFileSync.
+function scheduleLastMessageCacheSave() {
+  lastMessageCacheDirty = true;
+  if (lastMessageCacheSaveTimer) return;
+  lastMessageCacheSaveTimer = setTimeout(() => {
+    lastMessageCacheSaveTimer = null;
+    if (!lastMessageCacheDirty) return;
+    lastMessageCacheDirty = false;
+    try {
+      fs.writeFileSync(lastMessageCachePath(), JSON.stringify(Object.fromEntries(lastMessageCache)));
+    } catch (err) {
+      console.error('[sl] no se pudo guardar el caché de últimos mensajes:', err.message || err);
+    }
+  }, 5000);
+}
 
 // Presencia (online/away) de contactos de DM. Cambia mucho más seguido que
 // el nombre/avatar/membresía, así que el cooldown es bastante más corto que
@@ -297,6 +350,7 @@ async function resolveConversationMeta(c) {
   // mensaje real"; pushChatListOnce() lo usa para no mostrar estos chats
   // vacíos en la lista.
   lastMessageCache.set(c.id, { text: lastMessage, ts: timestamp, mentionsMe });
+  scheduleLastMessageCacheSave();
   return { name, avatar, lastMessage, timestamp, mentionsMe, online };
 }
 
@@ -604,6 +658,7 @@ function wireSocketEvents() {
         ts: serialized.timestamp,
         mentionsMe,
       });
+      scheduleLastMessageCacheSave();
       // Mismo criterio de visibilidad que pushChatListOnce(): un canal
       // normal (ni DM ni mpim) sin mención directa no entra a la lista —
       // pero este handler prendía el punto ámbar de "mensaje nuevo" para
