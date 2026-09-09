@@ -537,6 +537,11 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   font-size: 15px !important;
   font-weight: 600;
 }
+.reaction-reply-btn {
+  color: var(--text-dim);
+  font-size: 14px !important;
+}
+.reaction-reply-btn:hover { color: var(--text); }
 .reaction-more-btn:hover { color: var(--text); }
 
 .composer {
@@ -647,6 +652,41 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   line-height: 1;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
+}
+
+/* --- Previsualización de "responder a" (WhatsApp), sobre el composer --- */
+.reply-preview {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 10px 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.reply-preview-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.reply-preview-author {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.reply-preview-text {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reply-preview .image-preview-remove {
+  position: static;
+  flex: 0 0 auto;
 }
 
 /* --- Imágenes dentro de burbujas de mensaje --- */

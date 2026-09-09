@@ -438,9 +438,12 @@ async function getMessages(chatId) {
   }
 }
 
-async function sendMessage({ chatId, text, mentions }) {
+async function sendMessage({ chatId, text, mentions, quotedMessageId }) {
   try {
-    await client.sendMessage(chatId, text, mentions && mentions.length ? { mentions } : {});
+    const options = {};
+    if (mentions && mentions.length) options.mentions = mentions;
+    if (quotedMessageId) options.quotedMessageId = quotedMessageId;
+    await client.sendMessage(chatId, text, options);
     return { ok: true };
   } catch (err) {
     console.error('[wa] sendMessage() falló:', err.message || err);
@@ -448,10 +451,13 @@ async function sendMessage({ chatId, text, mentions }) {
   }
 }
 
-async function sendImage({ chatId, base64, mimetype, filename, caption }) {
+async function sendImage({ chatId, base64, mimetype, filename, caption, quotedMessageId }) {
   try {
     const media = new MessageMedia(mimetype, base64, filename);
-    await client.sendMessage(chatId, media, caption ? { caption } : {});
+    const options = {};
+    if (caption) options.caption = caption;
+    if (quotedMessageId) options.quotedMessageId = quotedMessageId;
+    await client.sendMessage(chatId, media, options);
     return { ok: true };
   } catch (err) {
     console.error('[wa] sendImage() falló:', err.message || err);

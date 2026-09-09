@@ -9,9 +9,10 @@ const wa = {
   onIncoming: (cb) => ipcRenderer.on('wa:incoming', (_e, msg) => cb(msg)),
   onReactionUpdate: (cb) => ipcRenderer.on('wa:reactionUpdate', (_e, payload) => cb(payload)),
   getMessages: (chatId) => ipcRenderer.invoke('wa:getMessages', chatId),
-  sendMessage: (chatId, text, mentions) => ipcRenderer.invoke('wa:sendMessage', { chatId, text, mentions }),
-  sendImage: (chatId, base64, mimetype, filename, caption) =>
-    ipcRenderer.invoke('wa:sendImage', { chatId, base64, mimetype, filename, caption }),
+  sendMessage: (chatId, text, mentions, quotedMessageId) =>
+    ipcRenderer.invoke('wa:sendMessage', { chatId, text, mentions, quotedMessageId }),
+  sendImage: (chatId, base64, mimetype, filename, caption, quotedMessageId) =>
+    ipcRenderer.invoke('wa:sendImage', { chatId, base64, mimetype, filename, caption, quotedMessageId }),
   getGroupParticipants: (chatId) => ipcRenderer.invoke('wa:getGroupParticipants', chatId),
   reactToMessage: (messageId, emoji, chatId) => ipcRenderer.invoke('wa:reactToMessage', { messageId, emoji, chatId }),
   regenerateQr: () => ipcRenderer.invoke('wa:regenerateQr'),

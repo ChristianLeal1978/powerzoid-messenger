@@ -33,6 +33,10 @@ const imagePreviewRemove = document.getElementById('image-preview-remove');
 const filePreviewChip = document.getElementById('file-preview-chip');
 const filePreviewIcon = document.getElementById('file-preview-icon');
 const filePreviewName = document.getElementById('file-preview-name');
+const replyPreviewEl = document.getElementById('reply-preview');
+const replyPreviewAuthor = document.getElementById('reply-preview-author');
+const replyPreviewText = document.getElementById('reply-preview-text');
+const replyPreviewRemove = document.getElementById('reply-preview-remove');
 const lightboxEl = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
 const topbarTitle = document.getElementById('topbar-title');
@@ -142,6 +146,7 @@ let groupParticipants = [];
 let pendingMentions = new Map(); // id -> nombre, para el envío
 let pendingAttachment = null; // { base64, mimetype, filename } del archivo adjunto (imagen o documento), antes de enviar
 let reactingToMessageId = null; // id del mensaje al que se está por reaccionar desde el picker de "+"
+let replyingTo = null; // { id, label, text } del mensaje al que se está respondiendo (solo WhatsApp, ver startReply())
 let chatSearchQuery = ''; // filtro en vivo sobre nombre/último mensaje de la lista de chats
 let mentionMatches = [];
 let mentionActiveIndex = 0;
@@ -225,6 +230,7 @@ function closeConversation() {
   selectedChatId = null;
   hideMentionList();
   emojiPickerEl.classList.add('hidden');
+  cancelReply();
   convActive.classList.add('hidden');
   convEmpty.classList.remove('hidden');
   renderChatList();
@@ -575,6 +581,7 @@ async function openChat(chatId, name) {
   pendingMentions = new Map();
   clearPendingAttachment();
   reactingToMessageId = null;
+  cancelReply();
   hideMentionList();
   emojiPickerEl.classList.add('hidden');
   renderChatList();
@@ -695,7 +702,7 @@ function renderMessage(msg) {
     // soltar — sin este chequeo, cada selección togglearía además la barra
     // de reacciones.
     if (window.getSelection().toString()) return;
-    toggleReactionBar(wrap, msg.id);
+    toggleReactionBar(wrap, msg);
   });
   // El nombre de autor solo aparece en mensajes de grupo/canal ajenos (ver
   // authorHtml arriba) — clickearlo abre una conversación privada con esa
@@ -813,7 +820,7 @@ function closeReactionBar() {
   openReactionBarWrap = null;
 }
 
-function toggleReactionBar(wrap, msgId) {
+function toggleReactionBar(wrap, msg) {
   if (openReactionBarWrap === wrap) {
     closeReactionBar();
     return;
@@ -828,7 +835,7 @@ function toggleReactionBar(wrap, msgId) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       closeReactionBar();
-      await activeApi().reactToMessage(msgId, emoji, selectedChatId);
+      await activeApi().reactToMessage(msg.id, emoji, selectedChatId);
     });
     bar.appendChild(btn);
   });
@@ -840,15 +847,50 @@ function toggleReactionBar(wrap, msgId) {
   moreBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     closeReactionBar();
-    reactingToMessageId = msgId;
+    reactingToMessageId = msg.id;
     hideMentionList();
     positionFloatingPanel(emojiPickerEl);
     emojiPickerEl.classList.remove('hidden');
   });
   bar.appendChild(moreBtn);
+  // Responder a un mensaje puntual: solo WhatsApp soporta citar un mensaje
+  // (quotedMessageId, ver whatsapp.js) — Slack no tiene hilos (ver CLAUDE.md,
+  // "Limitaciones conocidas"), así que el ícono ni aparece ahí.
+  if (activeProvider === 'wa') {
+    const replyBtn = document.createElement('button');
+    replyBtn.type = 'button';
+    replyBtn.className = 'reaction-reply-btn';
+    replyBtn.textContent = '↩';
+    replyBtn.setAttribute('aria-label', 'Responder a este mensaje');
+    replyBtn.title = 'Responder';
+    replyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeReactionBar();
+      startReply(msg);
+    });
+    bar.appendChild(replyBtn);
+  }
   wrap.appendChild(bar);
   openReactionBarWrap = wrap;
 }
+
+// --- Responder a un mensaje (WhatsApp) ---
+function startReply(msg) {
+  const label = msg.fromMe ? 'Tú' : msg.authorName || convName.textContent;
+  const text = msg.sticker ? 'Sticker' : msg.image ? msg.body || 'Imagen' : msg.body || (msg.hasMedia ? '📎 Adjunto' : '');
+  replyingTo = { id: msg.id, label, text };
+  replyPreviewAuthor.textContent = label;
+  replyPreviewText.textContent = text;
+  replyPreviewEl.classList.remove('hidden');
+  composerInput.focus();
+}
+
+function cancelReply() {
+  replyingTo = null;
+  replyPreviewEl.classList.add('hidden');
+}
+
+replyPreviewRemove.addEventListener('click', cancelReply);
 
 document.addEventListener('click', (e) => {
   if (openReactionBarWrap && !openReactionBarWrap.contains(e.target)) {
@@ -944,14 +986,17 @@ composer.addEventListener('submit', async (e) => {
   const text = composerInput.value.trim();
   if (!selectedChatId || (!text && !pendingAttachment)) return;
 
+  const quotedMessageId = replyingTo ? replyingTo.id : undefined;
+
   if (pendingAttachment) {
     const attachment = pendingAttachment;
     composerInput.value = '';
     pendingMentions = new Map();
     clearPendingAttachment();
+    cancelReply();
     autoResizeComposer();
     hideMentionList();
-    const res = await activeApi().sendImage(selectedChatId, attachment.base64, attachment.mimetype, attachment.filename, text);
+    const res = await activeApi().sendImage(selectedChatId, attachment.base64, attachment.mimetype, attachment.filename, text, quotedMessageId);
     if (!res.ok) {
       // no perdemos el adjunto ni el texto si falló el envío
       pendingAttachment = attachment;
@@ -965,9 +1010,10 @@ composer.addEventListener('submit', async (e) => {
   const mentions = Array.from(pendingMentions.keys());
   composerInput.value = '';
   pendingMentions = new Map();
+  cancelReply();
   autoResizeComposer();
   hideMentionList();
-  const res = await activeApi().sendMessage(selectedChatId, text, mentions);
+  const res = await activeApi().sendMessage(selectedChatId, text, mentions, quotedMessageId);
   if (!res.ok) {
     composerInput.value = text; // no perdemos lo escrito si falló el envío
     autoResizeComposer();
