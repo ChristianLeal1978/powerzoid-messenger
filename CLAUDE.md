@@ -320,6 +320,41 @@ menciones, qué `window.api.*` llamar).
   haya quedado en el archivo del primer intento, para no repetir el mismo
   atasco una vez más con datos ya guardados en ese formato.
 
+## Responder a un mensaje puntual (WhatsApp, agregada 2026-09-09)
+
+Clic en un mensaje ya abría la barra de reacciones rápidas (`toggleReactionBar()`
+en `renderer.js`) — ahora esa misma barra suma un ícono ↩ para citar ese
+mensaje puntual en la respuesta, igual que "Responder" en el WhatsApp oficial.
+
+- **Solo WhatsApp:** el ícono ni se renderiza si `activeProvider === 'sl'`
+  — Slack no tiene hilos ni citas (ver "Limitaciones conocidas" en la
+  sección de arriba), así que no hay `quotedMessageId` equivalente ahí.
+- **Flujo:** `startReply(msg)` en `renderer.js` guarda `replyingTo = {id,
+  label, text}` a partir del propio objeto de mensaje ya normalizado (no
+  se relee del DOM, para no tener que separar a mano el texto del autor/
+  hora que ya quedaron mezclados en el innerHTML de la burbuja) y muestra
+  un preview (`#reply-preview`, con el mismo lenguaje visual que
+  `.quoted-preview`: borde izquierdo de acento) arriba del composer, con
+  botón ✕ para cancelar (`cancelReply()`).
+- Al enviar, `composer`'s submit handler manda `replyingTo.id` como
+  `quotedMessageId` hasta `activeApi().sendMessage()`/`sendImage()` ->
+  `preload.js` -> `wa:sendMessage`/`wa:sendImage` -> `sendMessage()`/
+  `sendImage()` en `whatsapp.js`, que lo pasan como opción a
+  `client.sendMessage()` (soportada nativamente por whatsapp-web.js,
+  confirmada en `node_modules/whatsapp-web.js/src/Client.js`, no depende
+  del parche del bloqueador de julio 2026).
+- `cancelReply()` se llama también al abrir otro chat (`openChat()`) y al
+  cerrar la conversación (`closeConversation()`) — una respuesta pendiente
+  no debe sobrevivir a cambiar de chat.
+- No probado en vivo con una sesión de WhatsApp real al momento de este
+  commit (el entorno de desarrollo no tenía una sesión disponible porque
+  la app real del usuario ya tenía el perfil de Puppeteer en uso) — sí se
+  confirmó que `quotedMessageId` es una opción real de la librería y que
+  la app arranca sin errores con el cambio. Si en algún momento se reporta
+  que citar un mensaje no funciona, revisar primero si sigue siendo
+  soportada esa opción en el commit del fork fijado en `package.json` (ver
+  sección de arriba).
+
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho
    el 2026-08-07: en GNOME/Wayland vía XWayland, la ventana queda en x=0,
