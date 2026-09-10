@@ -690,10 +690,26 @@ function renderMessage(msg) {
   // en whatsapp.js) — Slack no tiene reenvíos, así que ahí el campo nunca
   // llega y este bloque no se renderiza.
   const forwardedHtml = msg.forwarded ? `<span class="forwarded-label">↪ Reenviado</span>` : '';
+  // Tarjeta(s) de contacto (vcard/multi_vcard) — ver getContacts() en
+  // whatsapp.js. Reemplaza el cuerpo del mensaje en vez de sumarse al texto:
+  // el body crudo es el propio BEGIN:VCARD/END:VCARD, no sirve mostrarlo.
+  const contactsHtml =
+    msg.contacts && msg.contacts.length
+      ? msg.contacts
+          .map(
+            (c) =>
+              `<div class="contact-card"><span class="contact-avatar">👤</span>` +
+              `<div class="contact-info"><span class="contact-name">${escapeHtml(c.name)}</span>` +
+              `${c.phones.map((p) => `<span class="contact-phone">${escapeHtml(p)}</span>`).join('')}</div></div>`
+          )
+          .join('')
+      : '';
   const bodyHtml = msg.sticker
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
     : msg.image
     ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
+    : contactsHtml
+    ? contactsHtml
     : linkifyHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
   b.innerHTML = `${authorHtml}${forwardedHtml}${quotedHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
   b.addEventListener('click', () => {

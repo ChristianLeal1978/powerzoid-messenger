@@ -156,6 +156,36 @@ async function getMediaDataUri(msg) {
   }
 }
 
+// --- Tarjetas de contacto (vcard/multi_vcard) ---
+// msg.vCards (poblado por la librería para type 'vcard'/'multi_vcard') trae
+// el texto crudo del vCard tal cual lo manda WhatsApp — lo parseamos acá
+// para no mostrarle al usuario el BEGIN:VCARD/END:VCARD sin procesar.
+function parseVCard(vcard) {
+  const lines = String(vcard).split(/\r\n|\n|\r/);
+  let name = null;
+  const phones = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).split(';')[0].toUpperCase();
+    const value = line.slice(colonIdx + 1).trim();
+    if (key === 'FN' && !name) {
+      name = value;
+    } else if (key === 'TEL' && value) {
+      phones.push(value);
+    }
+  }
+  return { name: name || 'Contacto', phones };
+}
+
+function getContacts(msg) {
+  if (msg.type !== 'vcard' && msg.type !== 'multi_vcard') return null;
+  const vCards = msg.vCards || [];
+  if (!vCards.length) return null;
+  return vCards.map(parseVCard);
+}
+
 async function getReactionsSummary(msg) {
   if (!msg.hasReaction) return [];
   try {
@@ -229,6 +259,7 @@ async function serializeMessage(msg) {
     type: msg.type,
     sticker: msg.type === 'sticker' ? mediaDataUri : null,
     image: msg.type === 'image' ? mediaDataUri : null,
+    contacts: getContacts(msg),
     reactions: await getReactionsSummary(msg),
   };
 }
