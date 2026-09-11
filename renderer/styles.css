@@ -740,6 +740,14 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
 }
 .image-caption { display: block; margin-top: 4px; }
 
+/* --- Audio (notas de voz/adjuntos de audio, Slack por ahora) --- */
+.msg-audio {
+  display: block;
+  max-width: 220px;
+  height: 32px;
+  accent-color: var(--accent);
+}
+
 /* --- Vista ampliada de imágenes ("modo teatro") --- */
 .lightbox {
   position: fixed;

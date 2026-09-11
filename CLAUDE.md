@@ -96,7 +96,9 @@ menciones, qué `window.api.*` llamar).
   disponible; si no, caen a texto plano con una advertencia en consola
   (`main.js`, `saveSlackCredentials()`) — no bloquea el arranque.
 - **Limitaciones conocidas, no bugs a "arreglar" sin avisar primero:** sin
-  hilos (todo se postea plano al canal), sin conteo real de no-leídos (la
+  hilos como concepto propio (todo se postea plano al canal — la única
+  excepción es la respuesta a tus propios mensajes, ver "Respuestas de hilo
+  a mensajes propios" más abajo), sin conteo real de no-leídos (la
   Web API no lo expone simple ni con token de usuario — se usa el mismo
   aviso de reacciones para no dejarlo pasar en silencio), y el picker de
   reacciones
@@ -319,6 +321,101 @@ menciones, qué `window.api.*` llamar).
   descarta al cargar cualquier entrada del formato viejo (sin `name`) que
   haya quedado en el archivo del primer intento, para no repetir el mismo
   atasco una vez más con datos ya guardados en ese formato.
+- **Respuestas de hilo a mensajes propios (agregado 2026-09-11):** el
+  usuario reportó no ver cuándo alguien le respondía en hilo a su propia
+  publicación en un canal. Hasta acá, `wireSocketEvents()` en `slack.js`
+  descartaba TODA respuesta de hilo sin mirar de quién era el mensaje raíz
+  (`if (event.thread_ts && event.thread_ts !== event.ts) return;`,
+  agregado el 2026-08-14 porque sin filtrar, cualquier reply prendía el
+  punto ámbar sin que apareciera nada al abrir la conversación —
+  `conversations.history` no trae replies de hilo). Eso era correcto para
+  hilos ajenos, pero también tapaba las respuestas a uno mismo, que es
+  justamente lo que el usuario quiere ver. No es threading completo (sigue
+  sin haber UI de hilos ni de ver hilos ajenos) — es un caso puntual: si el
+  mensaje raíz del hilo es tuyo, la respuesta se trata como un mensaje
+  plano más de la conversación.
+  - `getThreadParentInfo(channelId, threadTs)` resuelve de quién es el
+    mensaje raíz con `conversations.history({ latest: threadTs, inclusive:
+    true, limit: 1 })` (mismo patrón que `handleReactionEvent()`), cacheado
+    en `threadParentInfoCache` como `{ mine, quoted }` — el mensaje raíz no
+    cambia, así que no hace falta repetir el pedido por cada reply nueva
+    del mismo hilo.
+  - `wireSocketEvents()` solo sigue descartando la respuesta si el mensaje
+    raíz NO es tuyo; si es tuyo, sigue el flujo normal — y además cuenta
+    como si fuera una @mención (`mentionsMe: mentionsMe ||
+    isReplyToMyMessage`) para que el canal entre a la lista y dispare
+    `sl:incoming` aunque el texto de la respuesta no te mencione a vos
+    directamente.
+  - `getMessages()` (se llama al abrir/reabrir una conversación) ahora
+    también resuelve esto: para cada mensaje de la página de
+    `conversations.history` que sea tuyo y tenga `reply_count > 0`, pide
+    `conversations.replies()` y mezcla esas respuestas en la lista plana,
+    ordenada por `ts` — si no, la respuesta desaparecía de nuevo al volver
+    a abrir el chat (mismo motivo que llevó a filtrar hilos por completo la
+    primera vez). No hace falta scope nuevo en el manifiesto de Slack:
+    `conversations.replies` usa los mismos scopes `*:history` que ya pide
+    `conversations.history` (ver README, sección "Conectar Slack").
+  - **Vista previa citada del mensaje raíz (mismo día, segundo pedido):**
+    con la respuesta ya visible, el usuario pidió que se viera vinculada al
+    mensaje original, como el bloque `.quoted-preview` que ya usa WhatsApp
+    para "responder a un mensaje puntual" (ver esa sección más abajo).
+    `buildQuotedSummary(parentMsg)` en `slack.js` arma
+    `{ authorName, body }` a partir del mensaje raíz (mismo campo `quoted`
+    que ya produce `getQuotedSummary()` en `whatsapp.js` — `renderMessage()`
+    en `renderer.js` ya renderizaba `msg.quoted` de forma genérica, sin
+    gating por proveedor, así que no hizo falta tocar el renderer para esto,
+    solo actualizar el comentario que decía "solo para WhatsApp por ahora").
+    En vivo, `getThreadParentInfo()` guarda el resumen junto al booleano
+    `mine` en el mismo cache (así no hay que pedir el mensaje raíz dos
+    veces); en `getMessages()`, el mensaje raíz ya viene incluido en la
+    página de `conversations.history` (es el mismo objeto que dispara el
+    pedido de `conversations.replies()`), así que ahí tampoco hace falta un
+    pedido extra — solo pasar ese resumen a `serializeMessage()` para cada
+    reply de su hilo (`quotedByTs`).
+  - No probado en vivo (no había sesión de Slack disponible en el entorno
+    de desarrollo al momento de este cambio, mismo caso que la respuesta
+    puntual de WhatsApp más abajo) — sí se confirmó `node -c` sobre
+    `slack.js`/`renderer.js` y que la lógica para hilos ajenos no cambió
+    (siguen ignorados igual que antes).
+- **Búsqueda de personas/canales y @menciones sin distinguir tildes
+  (agregado 2026-09-11):** el usuario reportó que buscar "Cesar" no
+  encontraba a "César" — pedido explícito: tratarlos como el mismo texto.
+  `normalizeForSearch()` (nueva, en `slack.js` y también en
+  `renderer.js` — son archivos separados sin build step, así que no hay
+  forma de compartir la función entre proceso principal y renderer sin
+  agregar un módulo compartido, que no se justifica por una función de
+  una línea) hace `.normalize('NFD').replace(...marcas diacríticas...,
+  '').toLowerCase()` antes de comparar. Aplicado en cuatro puntos: 1)
+  `searchUsers()` y 2) `searchChannels()` en `slack.js` (el buscador de
+  personas/canales del workspace); 3) el filtro de la lista de chats en
+  `renderChatList()` de `renderer.js` (compartido por WhatsApp y Slack); 4)
+  el autocompletado de `@menciones` en `updateMentionDropdown()` de
+  `renderer.js` (también compartido por ambos proveedores, vía
+  `groupParticipants`). El resto de comparaciones de texto (ej.
+  `textMentionsUser()`, que compara el ID crudo `<@U123>` de Slack, no un
+  nombre escrito a mano) no aplica acá — no tiene tildes que normalizar.
+- **Audio reproducible en la burbuja (agregado 2026-09-11):** hasta acá
+  CUALQUIER adjunto que no fuera una imagen (audio incluido) se mostraba
+  como texto plano "📎 Adjunto" + un botón de descarga (`downloadAttachment()`
+  en `renderer.js`) — para escuchar una nota de voz había que descargarla a
+  disco y abrirla con otra app. El usuario pidió poder escucharla directo.
+  `getFirstAudio(msg)` en `slack.js` (junto a `getFirstImage()`, ahora
+  ambas comparten `findFirstFile(msg, mimePrefix)`) busca el primer archivo
+  adjunto cuyo `mimetype` empiece con `audio/` y lo resuelve a data URI con
+  el mismo `fetchAsDataUri()` que ya usan las imágenes — mismo criterio:
+  siempre al traer el mensaje, no recién al hacer click, porque una nota de
+  voz es liviana. `serializeMessage()` expone esto como `type: 'audio'` +
+  campo `audio` (si ya hay imagen, gana la imagen — un mensaje no trae
+  ambas en la práctica). `renderMessage()` en `renderer.js` renderiza
+  `<audio controls src="...">` cuando `msg.audio` está poblado (ver
+  `.msg-audio` en `styles.css`); el botón de descarga sigue apareciendo
+  igual (por `msg.hasMedia`), para quien prefiera guardar el archivo. Solo
+  Slack por ahora — WhatsApp sigue mostrando "📎 Adjunto" para audio, no se
+  tocó `whatsapp.js` (no fue parte del pedido; si hace falta ahí también,
+  el mismo patrón aplicaría sobre `getMediaPreview()`). No probado en vivo
+  (mismo motivo que el resto de los cambios de esta fecha: sin sesión de
+  Slack disponible en este entorno) — sí se confirmó `node -c` sobre
+  `slack.js`/`renderer.js`.
 
 ## Responder a un mensaje puntual (WhatsApp, agregada 2026-09-09)
 

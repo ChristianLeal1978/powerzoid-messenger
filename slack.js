@@ -36,6 +36,16 @@ function textMentionsUser(rawText, userId) {
   return rawText.includes(`<@${userId}>`);
 }
 
+// Para búsquedas/menciones "César" == "Cesar" (pedido del usuario,
+// 2026-09-11): quita diacríticos antes de comparar, en vez de exigir que el
+// usuario tipee la tilde exacta.
+function normalizeForSearch(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
 // --- Mapa emoji Unicode <-> shortcode de Slack ---
 // La lista de reacciones rápidas y el picker de emojis en renderer.js usan
 // caracteres Unicode (👍, ❤️…), pero la API de reacciones de Slack solo
@@ -193,9 +203,13 @@ async function formatSlackText(text) {
   return out;
 }
 
-async function getFirstImage(msg) {
+function findFirstFile(msg, mimePrefix) {
   if (!msg.files || !msg.files.length) return null;
-  const file = msg.files.find((f) => f.mimetype && f.mimetype.startsWith('image/'));
+  return msg.files.find((f) => f.mimetype && f.mimetype.startsWith(mimePrefix)) || null;
+}
+
+async function getFirstImage(msg) {
+  const file = findFirstFile(msg, 'image/');
   if (!file || !file.url_private) return null;
   // Los archivos de Slack viven en URLs privadas: hace falta el token
   // como Bearer para poder descargarlos (a diferencia de los avatares de
@@ -203,11 +217,43 @@ async function getFirstImage(msg) {
   return fetchAsDataUri(file.url_private, userToken);
 }
 
-async function serializeMessage(msg, channelId) {
+// Igual que getFirstImage(), pero para notas de audio/adjuntos de audio —
+// pedido del usuario (2026-09-11): en vez de solo "📎 Adjunto" + botón de
+// descarga (lo único que había hasta acá para cualquier adjunto que no sea
+// imagen, ver renderMessage() en renderer.js), un audio se puede escuchar
+// directo en la burbuja con un <audio controls>. Mismo criterio que las
+// imágenes: se resuelve siempre al traer el mensaje (no on-demand al hacer
+// click), embebido como data URI — las notas de voz de Slack son livianas,
+// no debería pesar como para justificar un flujo lazy aparte.
+async function getFirstAudio(msg) {
+  const file = findFirstFile(msg, 'audio/');
+  if (!file || !file.url_private) return null;
+  return fetchAsDataUri(file.url_private, userToken);
+}
+
+// Resumen del mensaje raíz de un hilo, para la vista previa citada
+// (renderer.js, `.quoted-preview` — mismo bloque visual que ya usa WhatsApp
+// para "responder a un mensaje puntual", ver CLAUDE.md). Solo se llama para
+// respuestas a hilos que SÍ se dejan pasar (mensaje raíz tuyo, ver
+// getThreadParentInfo() y getMessages()) — no hace falta resolver esto para
+// hilos ajenos, que se siguen ignorando.
+async function buildQuotedSummary(parentMsg) {
+  if (!parentMsg) return null;
+  const authorId = parentMsg.user || null;
+  const fromMe = !!myUserId && authorId === myUserId;
+  const authorName = fromMe ? 'Tú' : authorId ? (await getUserInfo(authorId)).name : null;
+  const body = (await formatSlackText(parentMsg.text)) || (parentMsg.files && parentMsg.files.length ? '📎 Adjunto' : '');
+  return { authorName, body };
+}
+
+async function serializeMessage(msg, channelId, quoted) {
   const authorId = msg.user || null;
   const fromMe = !!myUserId && authorId === myUserId;
   const authorName = authorId && !fromMe ? (await getUserInfo(authorId)).name : null;
   const image = await getFirstImage(msg);
+  // Un mensaje no trae imagen Y audio a la vez en la práctica — si algún
+  // día pasara, la imagen gana (mismo orden que el resto de esta función).
+  const audio = image ? null : await getFirstAudio(msg);
   return {
     id: msg.ts,
     chatId: channelId,
@@ -217,9 +263,11 @@ async function serializeMessage(msg, channelId) {
     author: authorId,
     authorName,
     hasMedia: !!(msg.files && msg.files.length),
-    type: image ? 'image' : 'text',
+    type: image ? 'image' : audio ? 'audio' : 'text',
     sticker: null,
     image,
+    audio,
+    quoted: quoted || null,
     reactions: (msg.reactions || []).map((r) => ({
       emoji: slackNameToEmoji(r.name),
       count: r.count,
@@ -650,6 +698,38 @@ async function handleReactionEvent(args) {
   }
 }
 
+// Respuestas de hilo cuyo mensaje raíz es tuyo — el resto sigue ignorado
+// (ver comentario en wireSocketEvents()/getMessages() sobre por qué). El
+// mensaje raíz no cambia, así que cachear evita pedir el mismo
+// conversations.history por cada reply nueva de un hilo activo — se
+// cachea tanto de quién es (`mine`) como el resumen para la vista previa
+// citada (`quoted`, ver buildQuotedSummary()), no solo el booleano, para no
+// tener que volver a pedirlo aparte al renderizar la respuesta.
+const threadParentInfoCache = new Map(); // "canal:thread_ts" -> { mine, quoted }
+
+async function getThreadParentInfo(channelId, threadTs) {
+  const key = `${channelId}:${threadTs}`;
+  if (threadParentInfoCache.has(key)) return threadParentInfoCache.get(key);
+  let info = { mine: false, quoted: null };
+  try {
+    const result = await web.conversations.history({
+      channel: channelId,
+      latest: threadTs,
+      inclusive: true,
+      limit: 1,
+    });
+    const parent = result.messages && result.messages[0];
+    if (parent && myUserId && parent.user === myUserId) {
+      info = { mine: true, quoted: await buildQuotedSummary(parent) };
+    }
+  } catch (err) {
+    // Sin acceso al mensaje raíz del hilo — mejor tratarlo como ajeno
+    // (se ignora, como cualquier otra respuesta de hilo) que romper.
+  }
+  threadParentInfoCache.set(key, info);
+  return info;
+}
+
 function wireSocketEvents() {
   socket.on('error', (err) => {
     console.error('[sl] socket error:', err && err.message ? err.message : err);
@@ -662,25 +742,47 @@ function wireSocketEvents() {
     const event = eventFromArgs(args);
     if (!event || !event.channel) return;
     if (event.subtype === 'message_changed' || event.subtype === 'message_deleted') return;
-    // Respuesta en un hilo (thread_ts != ts): la app no tiene hilos
+    // Respuesta en un hilo (thread_ts != ts): la app no tiene UI de hilos
     // (ver CLAUDE.md, sección Slack) y getMessages() solo trae
-    // conversations.history, que no incluye replies de hilo. Sin este
-    // filtro, cada reply prendía el punto ámbar de "mensaje nuevo" pero
-    // al abrir la conversación no aparecía nada — bug real, reportado
-    // por el usuario como aviso sostenido sin mensaje visible.
-    if (event.thread_ts && event.thread_ts !== event.ts) return;
+    // conversations.history, que no incluye replies de hilo por defecto.
+    // Sin ningún filtro, cada reply prendía el punto ámbar de "mensaje
+    // nuevo" pero al abrir la conversación no aparecía nada — bug real,
+    // reportado por el usuario como aviso sostenido sin mensaje visible.
+    // Ahora se deja pasar (y se muestra plano en la conversación, mezclado
+    // por orden de tiempo, con una vista previa citada del mensaje raíz —
+    // ver quotedSummary abajo) solo cuando el mensaje raíz del hilo es
+    // TUYO — pedido explícito del usuario, 2026-09-11: no veía cuándo
+    // alguien le respondía a su propia publicación en un canal, y luego
+    // (mismo día) pidió que esa respuesta se viera vinculada visualmente al
+    // mensaje original, como en WhatsApp. getMessages() trae estas mismas
+    // respuestas al reabrir el chat (ver getThreadParentInfo() ahí) para
+    // que no desaparezcan como antes. Respuestas a hilos ajenos se siguen
+    // ignorando — eso sí sería threading completo, fuera de alcance de
+    // este cambio.
+    let isReplyToMyMessage = false;
+    let quotedSummary = null;
+    if (event.thread_ts && event.thread_ts !== event.ts) {
+      const parentInfo = await getThreadParentInfo(event.channel, event.thread_ts);
+      isReplyToMyMessage = parentInfo.mine;
+      quotedSummary = parentInfo.quoted;
+      if (!isReplyToMyMessage) return;
+    }
     // Cada paso en su propio try/catch: un fallo puntual (ej. rate-limit al
     // refrescar membresía) no debe cortar el resto del manejo del evento en
     // silencio — eso dejaba la conversación y/o la lista sin actualizar
     // hasta el próximo mensaje, en vez de solo perderse ese refresco puntual.
     try {
       const mentionsMe = textMentionsUser(event.text, myUserId);
-      const serialized = await serializeMessage(event, event.channel);
+      const serialized = await serializeMessage(event, event.channel, quotedSummary);
       lastMessageCache.set(event.channel, {
         ...lastMessageCache.get(event.channel), // conserva name/avatar ya resueltos, si los hay
         text: serialized.body,
         ts: serialized.timestamp,
-        mentionsMe,
+        // Una respuesta a mi propio mensaje cuenta como "me interesa" igual
+        // que una @mención directa, aunque el texto de la respuesta no me
+        // mencione — así el canal también entra a la lista por este motivo
+        // (ver filtro de pushChatListOnce()).
+        mentionsMe: mentionsMe || isReplyToMyMessage,
       });
       scheduleLastMessageCacheSave();
       // Mismo criterio de visibilidad que pushChatListOnce(): un canal
@@ -694,7 +796,7 @@ function wireSocketEvents() {
       // resuelve para la próxima vez.
       const channelInfo = memberChannelsCache && memberChannelsCache.find((c) => c.id === event.channel);
       const alwaysVisible = !channelInfo || channelInfo.is_im || channelInfo.is_mpim;
-      if (alwaysVisible || mentionsMe) {
+      if (alwaysVisible || mentionsMe || isReplyToMyMessage) {
         send('sl:incoming', serialized);
       }
     } catch (err) {
@@ -794,14 +896,14 @@ async function getUserDirectory(forceRefresh) {
 
 async function searchUsers(query) {
   if (!web) return { ok: false, users: [] };
-  const q = (query || '').trim().toLowerCase();
+  const q = normalizeForSearch((query || '').trim());
   if (!q) return { ok: true, users: [] };
   try {
     const directory = await getUserDirectory();
     const matches = directory
       .filter((u) => {
         const p = u.profile || {};
-        const name = (p.display_name || p.real_name || u.name || '').toLowerCase();
+        const name = normalizeForSearch(p.display_name || p.real_name || u.name || '');
         return name.includes(q);
       })
       .slice(0, 20);
@@ -858,12 +960,12 @@ async function openDirectMessage(userId) {
 // (ver getMpimName()).
 async function searchChannels(query) {
   if (!web) return { ok: false, channels: [] };
-  const q = (query || '').trim().toLowerCase().replace(/^#/, '');
+  const q = normalizeForSearch((query || '').trim().replace(/^#/, ''));
   if (!q) return { ok: true, channels: [] };
   try {
     const channels = await getMemberChannels();
     const matches = channels
-      .filter((c) => !c.is_im && !c.is_mpim && (c.name || '').toLowerCase().includes(q))
+      .filter((c) => !c.is_im && !c.is_mpim && normalizeForSearch(c.name || '').includes(q))
       .slice(0, 20)
       .map((c) => ({ id: c.id, name: c.name }));
     return { ok: true, channels: matches };
@@ -931,6 +1033,7 @@ function disconnect() {
   avatarCache.clear();
   avatarFailedAt.clear();
   presenceCache.clear();
+  threadParentInfoCache.clear();
   memberChannelsCache = null;
   memberChannelsFetchedAt = 0;
   manuallyOpenedChannels.clear();
@@ -943,8 +1046,36 @@ async function getMessages(channelId) {
   if (!web) return { ok: false, messages: [] };
   try {
     const hist = await web.conversations.history({ channel: channelId, limit: 50 });
-    const msgs = (hist.messages || []).slice().reverse();
-    const messages = await Promise.all(msgs.map((m) => serializeMessage(m, channelId)));
+    const msgs = (hist.messages || []).slice();
+    // conversations.history no trae replies de hilo — wireSocketEvents()
+    // ya deja pasar en vivo las respuestas a MIS mensajes (ver
+    // getThreadParentInfo()), pero sin esto desaparecían de nuevo al
+    // reabrir la conversación. Se muestran planas, mezcladas por orden de
+    // tiempo con el resto, con una vista previa citada del mensaje raíz
+    // (`quotedByTs`, mismo bloque visual `.quoted-preview` de WhatsApp) —
+    // la app sigue sin UI de hilos como tal (ver CLAUDE.md), pero así queda
+    // claro a qué mensaje responde cada una. Hilos ajenos siguen sin
+    // traerse — mismo alcance que en vivo.
+    const myThreadParents = msgs.filter((m) => m.user === myUserId && m.reply_count > 0);
+    const quotedByTs = new Map(); // ts de la respuesta -> resumen del mensaje raíz
+    const replyBatches = await Promise.all(
+      myThreadParents.map(async (parent) => {
+        try {
+          const res = await web.conversations.replies({ channel: channelId, ts: parent.ts, limit: 100 });
+          const replies = (res.messages || []).filter((m) => m.ts !== parent.ts);
+          if (replies.length) {
+            const quoted = await buildQuotedSummary(parent);
+            for (const r of replies) quotedByTs.set(r.ts, quoted);
+          }
+          return replies;
+        } catch (err) {
+          return [];
+        }
+      })
+    );
+    for (const replies of replyBatches) msgs.push(...replies);
+    msgs.sort((a, b) => parseFloat(a.ts) - parseFloat(b.ts));
+    const messages = await Promise.all(msgs.map((m) => serializeMessage(m, channelId, quotedByTs.get(m.ts) || null)));
     return { ok: true, messages };
   } catch (err) {
     console.error('[sl] getMessages() falló:', err.message || err);

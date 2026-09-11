@@ -156,6 +156,16 @@ function initials(name) {
   return (name || '?').trim().slice(0, 2).toUpperCase();
 }
 
+// Para buscar chats o mencionar gente "César" == "Cesar" (pedido del
+// usuario, 2026-09-11): quita diacríticos antes de comparar. Compartida por
+// el filtro de chats y el autocompletado de @menciones (WhatsApp y Slack).
+function normalizeForSearch(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
 function formatTime(unixSeconds) {
   if (!unixSeconds) return '';
   const d = new Date(unixSeconds * 1000);
@@ -357,8 +367,8 @@ window.api.wa.onChatsSyncing(({ attempt }) => {
 
 function renderChatList() {
   chatListEl.innerHTML = '';
-  const q = chatSearchQuery.trim().toLowerCase();
-  const list = q ? chats.filter((c) => c.name.toLowerCase().includes(q)) : chats;
+  const q = normalizeForSearch(chatSearchQuery.trim());
+  const list = q ? chats.filter((c) => normalizeForSearch(c.name).includes(q)) : chats;
   if (q && !list.length) {
     const empty = document.createElement('div');
     empty.className = 'chat-search-empty';
@@ -678,9 +688,12 @@ function renderMessage(msg) {
     ? `<span class="author"${authorColor ? ` style="color:${authorColor}"` : ''}>${escapeHtml(msg.authorName)}</span>`
     : '';
   // Vista previa del mensaje citado (respuesta a otro mensaje del grupo) —
-  // viene de getQuotedMessage() en whatsapp.js, solo para WhatsApp por ahora
-  // (Slack no tiene hilos, ver CLAUDE.md). El truncado a una línea lo hace
-  // el CSS (.quoted-preview), no acá, para no cortar mal texto multibyte.
+  // en WhatsApp viene de getQuotedMessage() en whatsapp.js (respuesta
+  // puntual a cualquier mensaje); en Slack viene de buildQuotedSummary() en
+  // slack.js, pero solo para respuestas de hilo cuyo mensaje raíz es tuyo
+  // (Slack no tiene UI de hilos en general, ver CLAUDE.md — este es el
+  // único caso que se muestra). El truncado a una línea lo hace el CSS
+  // (.quoted-preview), no acá, para no cortar mal texto multibyte.
   const quotedHtml = msg.quoted
     ? `<div class="quoted-preview">${
         msg.quoted.authorName ? `<span class="quoted-author">${escapeHtml(msg.quoted.authorName)}</span>` : ''
@@ -708,6 +721,12 @@ function renderMessage(msg) {
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
     : msg.image
     ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
+    : msg.audio
+    ? // Por ahora solo lo puebla slack.js (getFirstAudio()) — pedido del
+      // usuario, 2026-09-11: poder escuchar un audio de Slack sin tener que
+      // descargarlo antes. El botón de descarga sigue apareciendo igual
+      // (ver más abajo, msg.hasMedia), por si quieren guardar el archivo.
+      `<audio class="msg-audio" controls src="${msg.audio}"></audio>${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
     : contactsHtml
     ? contactsHtml
     : linkifyHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
@@ -1106,7 +1125,7 @@ function getMentionQuery() {
   if (at > 0 && before !== ' ' && before !== '\n') return null; // @ debe iniciar una palabra
   const query = text.slice(at + 1);
   if (/\s/.test(query)) return null; // ya se cerró la mención con un espacio
-  return { query: query.toLowerCase(), start: at };
+  return { query: normalizeForSearch(query), start: at };
 }
 
 function updateMentionDropdown() {
@@ -1119,7 +1138,7 @@ function updateMentionDropdown() {
     hideMentionList();
     return;
   }
-  mentionMatches = groupParticipants.filter((p) => p.name.toLowerCase().includes(q.query));
+  mentionMatches = groupParticipants.filter((p) => normalizeForSearch(p.name).includes(q.query));
   if (!mentionMatches.length) {
     hideMentionList();
     return;
