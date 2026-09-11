@@ -400,6 +400,24 @@ function renderChatList() {
       `;
       row.addEventListener('click', () => openChat(c.id, c.name));
       chatListEl.appendChild(row);
+      // Solo canales de Slack elegidos a mano con el buscador (ver
+      // openChannel()/pushChatListOnce() en slack.js) traen c.pinned — el
+      // ícono deja desanclarlo sin tener que esperar a que desaparezca solo
+      // (ya no desaparece solo: ahora se persiste entre reinicios, ver
+      // CLAUDE.md, "Canales anclados").
+      if (c.pinned) {
+        const pinBtn = document.createElement('button');
+        pinBtn.type = 'button';
+        pinBtn.className = 'chat-pin-btn';
+        pinBtn.title = 'Desanclar canal';
+        pinBtn.setAttribute('aria-label', 'Desanclar canal');
+        pinBtn.textContent = '📌';
+        pinBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.api.sl.unpinChannel(c.id);
+        });
+        row.querySelector('.chat-side').prepend(pinBtn);
+      }
     });
   }
   // Slack: si hay una búsqueda activa y ya trajimos resultados de personas

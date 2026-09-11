@@ -24,11 +24,17 @@ let myUserId = null;
 //
 // Elegido a mano por el usuario con el buscador de canales (searchChannels()
 // + openChannel()), para comentar en un canal sin esperar una @mención (ej.
-// #editorial). Una vez elegido, se queda visible el resto de la sesión aunque
-// su último mensaje no te mencione — igual que un DM, es una elección
-// explícita de "quiero ver esto", no algo que deba desaparecer solo. En
-// memoria nomás: se vacía en cada reinicio, momento en que vuelve a aparecer
-// solo si ya cumple el filtro normal o se lo vuelve a elegir.
+// #editorial). Una vez elegido, se queda visible aunque su último mensaje no
+// te mencione — igual que un DM, es una elección explícita de "quiero ver
+// esto", no algo que deba desaparecer solo. Persistido a disco (ver
+// loadPinnedChannels()/savePinnedChannels() más abajo) — pedido explícito
+// del usuario, 2026-09-11 ("dejar anclado #editorial"): antes esto vivía
+// solo en memoria y se vaciaba en cada reinicio, así que un canal elegido a
+// mano había que volver a elegirlo cada vez que se abría la app. Se
+// repuebla en connect() (loadPinnedChannels()) y se vuelve a mostrar con
+// restorePinnedChannels(). unpinChannel() es la contraparte para sacar uno
+// (ícono 📌 en la fila del chat, ver renderer.js) — sin eso, un canal
+// anclado por error quedaría pegado para siempre.
 const manuallyOpenedChannels = new Set();
 
 function textMentionsUser(rawText, userId) {
@@ -340,6 +346,37 @@ function scheduleLastMessageCacheSave() {
   }, 5000);
 }
 
+// --- Canales anclados a mano (manuallyOpenedChannels), persistidos a disco
+// — ver el comentario junto a esa constante más arriba. Un archivo aparte
+// de lastMessageCachePath()/slackCredentialsPath(): son pocos ítems que
+// cambian poco (un pin/unpin ocasional, no un evento por mensaje), así que
+// no hace falta el mismo debounce que el caché de últimos mensajes —
+// escribir en el momento es simple y suficientemente barato acá.
+function pinnedChannelsPath() {
+  return path.join(app.getPath('userData'), 'slack-pinned-channels.json');
+}
+
+let pinnedChannelsLoaded = false;
+
+function loadPinnedChannels() {
+  if (pinnedChannelsLoaded) return;
+  pinnedChannelsLoaded = true;
+  try {
+    const ids = JSON.parse(fs.readFileSync(pinnedChannelsPath(), 'utf8'));
+    if (Array.isArray(ids)) ids.forEach((id) => manuallyOpenedChannels.add(id));
+  } catch (err) {
+    // Primera vez, o archivo inexistente/corrupto: arrancamos sin nada anclado.
+  }
+}
+
+function savePinnedChannels() {
+  try {
+    fs.writeFileSync(pinnedChannelsPath(), JSON.stringify(Array.from(manuallyOpenedChannels)));
+  } catch (err) {
+    console.error('[sl] no se pudo guardar los canales anclados:', err.message || err);
+  }
+}
+
 // Presencia (online/away) de contactos de DM. Cambia mucho más seguido que
 // el nombre/avatar/membresía, así que el cooldown es bastante más corto que
 // el resto de los cachés de este archivo — igual evita pedirla de nuevo en
@@ -602,6 +639,35 @@ async function backfillUnknownIms() {
   }
 }
 
+// Repone en lastMessageCache los canales anclados (manuallyOpenedChannels,
+// cargados de disco en connect() vía loadPinnedChannels()) que todavía no
+// se conocen en esta sesión — sin esto, un canal anclado sin actividad
+// reciente ni mensajes en lastMessageCache no entra a `known` en
+// pushChatListOnce() y el bypass de "canal elegido a mano" de ahí nunca
+// llega a evaluarse. Mismo patrón que backfillUnknownIms() (mutex propio,
+// dispara pushChatList() de nuevo solo si de verdad resolvió algo) pero
+// sin tope de lote: son canales que el usuario eligió a propósito, no
+// debería haber cientos.
+let restorePinnedInFlight = false;
+
+async function restorePinnedChannels() {
+  if (restorePinnedInFlight || !web || !manuallyOpenedChannels.size) return;
+  restorePinnedInFlight = true;
+  let fetchedSomething = false;
+  try {
+    const channels = await getMemberChannels();
+    const toRestore = channels.filter((c) => manuallyOpenedChannels.has(c.id) && !lastMessageCache.has(c.id));
+    if (!toRestore.length) return;
+    await mapSequentialWithDelay(toRestore, HISTORY_FETCH_DELAY_MS, (c) => resolveConversationMeta(c));
+    fetchedSomething = true;
+  } catch (err) {
+    console.error('[sl] restorePinnedChannels() falló:', err.message || err);
+  } finally {
+    restorePinnedInFlight = false;
+    if (fetchedSomething) pushChatList();
+  }
+}
+
 async function pushChatListOnce() {
   if (!web) return;
   try {
@@ -646,6 +712,10 @@ async function pushChatListOnce() {
       // Solo tiene sentido para DMs (un canal no tiene un único "usuario");
       // resolveConversationMeta() lo deja en null para el resto.
       online: meta.online,
+      // Para el ícono 📌 de "desanclar" en renderer.js — solo aplica a
+      // canales elegidos a mano (nunca a DMs/mpim, que no pasan por
+      // openChannel()).
+      pinned: manuallyOpenedChannels.has(channel.id),
     }));
     list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     send('sl:chats', list);
@@ -828,6 +898,7 @@ function wireSocketEvents() {
 
 async function connect({ userToken: token, appToken }) {
   loadLastMessageCache();
+  loadPinnedChannels();
   userToken = token;
   web = new WebClient(userToken);
   try {
@@ -854,6 +925,7 @@ async function connect({ userToken: token, appToken }) {
 
   send('sl:status', 'ready');
   pushChatList();
+  restorePinnedChannels(); // en segundo plano, no bloquea el envío de arriba
   return { ok: true };
 }
 
@@ -982,6 +1054,7 @@ async function openChannel(channelId) {
     const channel = channels.find((c) => c.id === channelId);
     if (!channel) return { ok: false };
     manuallyOpenedChannels.add(channelId);
+    savePinnedChannels();
     const meta = await resolveConversationMeta(channel);
     const chat = {
       id: channel.id,
@@ -991,6 +1064,7 @@ async function openChannel(channelId) {
       lastMessage: meta.lastMessage,
       timestamp: meta.timestamp || Math.floor(Date.now() / 1000),
       avatar: meta.avatar,
+      pinned: true,
     };
     pushChatList();
     return { ok: true, chat };
@@ -998,6 +1072,19 @@ async function openChannel(channelId) {
     console.error('[sl] openChannel() falló:', err.message || err);
     return { ok: false };
   }
+}
+
+// Contraparte de openChannel(): saca un canal de manuallyOpenedChannels y lo
+// persiste (ver ícono 📌 en la fila del chat, renderer.js). No hace falta
+// tocar lastMessageCache — si el canal sigue teniendo actividad real
+// (timestamp > 0) y cumple el filtro normal (mención directa, o es DM/mpim),
+// se sigue mostrando igual; si no, simplemente deja de aparecer, que es el
+// punto de desanclarlo.
+async function unpinChannel(channelId) {
+  manuallyOpenedChannels.delete(channelId);
+  savePinnedChannels();
+  pushChatList();
+  return { ok: true };
 }
 
 function disconnect() {
@@ -1037,6 +1124,12 @@ function disconnect() {
   memberChannelsCache = null;
   memberChannelsFetchedAt = 0;
   manuallyOpenedChannels.clear();
+  // Sin resetear esto, un reconector dentro del mismo proceso (desconectar
+  // y volver a pegar credenciales sin cerrar la app) dejaría
+  // loadPinnedChannels() como no-op en el próximo connect() — los pines
+  // seguirían en el archivo, pero manuallyOpenedChannels quedaría vacío
+  // para siempre en esta sesión del proceso.
+  pinnedChannelsLoaded = false;
   userDirectoryCache = null;
   userDirectoryFetchedAt = 0;
   send('sl:status', 'not-configured');
@@ -1222,5 +1315,6 @@ module.exports = {
   openDirectMessage,
   searchChannels,
   openChannel,
+  unpinChannel,
   downloadAttachment,
 };

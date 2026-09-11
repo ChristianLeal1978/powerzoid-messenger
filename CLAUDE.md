@@ -416,6 +416,48 @@ menciones, qué `window.api.*` llamar).
   (mismo motivo que el resto de los cambios de esta fecha: sin sesión de
   Slack disponible en este entorno) — sí se confirmó `node -c` sobre
   `slack.js`/`renderer.js`.
+- **Canales anclados persistidos entre reinicios (agregado 2026-09-11):**
+  pedido explícito del usuario ("dejar anclado #editorial"). Ya existía
+  `manuallyOpenedChannels` (elegir un canal con el buscador para que se
+  muestre siempre, ver más arriba) pero vivía solo en memoria — el propio
+  comentario de esa constante ya marcaba "se vacía en cada reinicio" como
+  limitación conocida. Ahora se persiste:
+  - `pinnedChannelsPath()`/`loadPinnedChannels()`/`savePinnedChannels()` en
+    `slack.js` guardan el Set como array de ids en
+    `slack-pinned-channels.json` (dentro de `userData`, mismo patrón que
+    `slack-chat-cache.json`) — sin el debounce que sí tiene
+    `lastMessageCache` porque un pin/unpin es un evento ocasional, no uno
+    por mensaje. `loadPinnedChannels()` es lazy, llamada una vez en
+    `connect()` junto a `loadLastMessageCache()`.
+  - `openChannel()` (buscador de canales) ahora también llama a
+    `savePinnedChannels()` al agregar el canal — elegirlo con el buscador
+    ES anclarlo, no hay un paso separado de "confirmar pin".
+  - `restorePinnedChannels()` (nueva, mismo patrón que
+    `backfillUnknownIms()`: mutex propio, dispara `pushChatList()` solo si
+    resolvió algo) repone en `lastMessageCache` los canales anclados que
+    todavía no se conocen en la sesión — necesario porque
+    `pushChatListOnce()` solo evalúa el bypass de "elegido a mano" sobre
+    canales que YA están en `known` (`lastMessageCache`); sin este paso, un
+    canal anclado sin actividad reciente quedaría afuera de la lista pese a
+    estar en `manuallyOpenedChannels`. Se llama desde `connect()`, en
+    segundo plano, después de `pushChatList()`.
+  - `unpinChannel(channelId)` (nueva, IPC `sl:unpinChannel` en
+    `main.js`/`preload.js`) es la contraparte — sin ella, un canal anclado
+    por error (o que ya no hace falta) quedaría pegado para siempre, cosa
+    que antes se resolvía solo con reiniciar la app. En `renderer.js`, cada
+    fila de chat con `c.pinned` (ver `pushChatListOnce()`) muestra un ícono
+    📌 (`.chat-pin-btn` en `styles.css`) que lo desancla al hacer click.
+  - `disconnect()` ahora también resetea `pinnedChannelsLoaded = false` —
+    sin esto, reconectar dentro del mismo proceso (desconectar y volver a
+    pegar credenciales sin cerrar la app) dejaría `loadPinnedChannels()`
+    como no-op en el siguiente `connect()`, y los pines nunca volverían a
+    `manuallyOpenedChannels` aunque siguieran en el archivo. (El mismo
+    problema existe para `lastMessageCacheLoaded`, sin tocar — no es parte
+    de este pedido, y ahí perder el caché solo cuesta un backfill más
+    lento, no que un pin "desaparezca".)
+  - No probado en vivo (sin sesión de Slack en este entorno) — sí se
+    confirmó `node -c` sobre los cuatro archivos tocados
+    (`slack.js`/`renderer.js`/`main.js`/`preload.js`).
 
 ## Responder a un mensaje puntual (WhatsApp, agregada 2026-09-09)
 

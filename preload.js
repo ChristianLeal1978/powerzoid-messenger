@@ -37,6 +37,7 @@ const sl = {
   openDirectMessage: (userId) => ipcRenderer.invoke('sl:openDirectMessage', userId),
   searchChannels: (query) => ipcRenderer.invoke('sl:searchChannels', query),
   openChannel: (channelId) => ipcRenderer.invoke('sl:openChannel', channelId),
+  unpinChannel: (channelId) => ipcRenderer.invoke('sl:unpinChannel', channelId),
   downloadAttachment: (messageId, chatId) => ipcRenderer.invoke('sl:downloadAttachment', { messageId, chatId }),
 };
 
