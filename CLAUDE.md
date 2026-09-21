@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+**Directiva principal:** háblame siempre en español neutro. No uses voseo
+(nada de "vos", "tenés", "podés", etc.) — usa tuteo ("tú", "tienes",
+"puedes"). No soy argentino.
+
 ## Qué es esto
 Barra lateral de WhatsApp para Linux (Fedora/GNOME), en Electron +
 whatsapp-web.js. Una sola columna: lista de chats arriba, conversación abajo.
