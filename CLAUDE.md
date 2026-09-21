@@ -58,6 +58,127 @@ Se mantiene además el workaround del lado nuestro: `serializeMessage()` en
 chatId de `msg.from`/`msg.to`, que ya vienen sin necesitar otra consulta al
 Store.
 
+### Bloqueador nuevo y SIN mitigar: enviar imágenes/adjuntos (2026-09-17)
+
+Reportado por el usuario: adjuntar una imagen funciona (el preview se ve
+bien), pero al apretar enviar el mensaje "se pega" — nunca sale, sin error
+visible en la UI. Confirmado en vivo, con logging de `err.stack` agregado a
+`sendMessage()`/`sendImage()` en `whatsapp.js`:
+
+```
+[wa] sendImage() falló: Error: Data passed to getter must include an id
+property (it's how we memoize) but got undefined
+s (https://static.whatsapp.net/rsrc.php/v4/ys/r/cmqMr-wgNWt.js:84:180)
+    ...
+    at async Client.sendMessage (whatsapp-web.js/src/Client.js:1595:25)
+```
+
+Es el mismo apagón de julio 2026 de arriba (WhatsApp Web dejó Webpack,
+`_serialized` pasó a `$1`), pero un ángulo DISTINTO que el parche fijado en
+`package.json` (PR #201832) no cubre: ese parche normaliza objetos recién
+llegados al lado Node (`Base._normalizeId()`), no las instancias que
+WhatsApp Web arma y usa puramente ADENTRO de la página al construir un
+mensaje saliente nuevo. Reportado y **todavía abierto, sin fix aceptado**
+en github.com/wwebjs/whatsapp-web.js/issues/201862 ("Errors r: r on
+client.getChats() and t: t on client.sendMessage(media)") — ni la PR del
+propio fork que tenemos fijado (#201832) ni la PR competidora más nueva
+(#201871, que dice resolver el mismo issue) lo arreglan de verdad: un
+usuario confirmó en el hilo (2026-08-14) que #201871 sigue sin arreglar el
+error de origen equivalente.
+
+**Lo que se probó y NO alcanzó (2026-09-17):**
+
+Diagnóstico en vivo contra la sesión real (Puppeteer, vía remote debugging
+port, sin exponerlo permanentemente en ningún lado — solo para esta
+sesión de investigación) confirmó que `WAWebMsgKey.prototype` no tiene
+getter `_serialized` propio y que una instancia recién creada
+(`newId = await WAWebMsgKey.newId()`) sólo expone el valor real bajo
+`.$1` — exactamente el mismo patrón que causa el bug de `getChats()`, pero
+del lado del mensaje NUEVO que se está por enviar
+(`newMsgKey` en `WWebJS.sendMessage()`,
+`node_modules/whatsapp-web.js/src/util/Injected/Utils.js`), no de un
+mensaje ya recibido. Se agregó `patchMsgKeySerialized()` en `whatsapp.js`
+— un getter en el prototype (`_serialized` → alias de `.$1`), corrido una
+vez en `client.on('ready', ...)`, con la misma idea (más liviana y
+verificada por la comunidad, un solo getter de prototype en vez de
+parchear cada call site) que propuso @lucis en el issue #201862. **Se
+confirmó en vivo que el parche se aplica y queda activo** — pero el envío
+de imágenes siguió fallando con el mismo error exacto después de aplicarlo,
+tanto en caliente (sin reiniciar) como después de reiniciar la app con el
+parche ya en el código. O sea: `MsgKey.prototype._serialized` faltante es
+real, pero NO es la causa (o no es la única causa) de ESTE crash puntual —
+se dejó el parche en el código de todos modos porque es correcto,
+idempotente e inocuo, pero no lo resuelve. Queda pendiente identificar el
+objeto real que llega sin id a la función de memoización compartida de
+WhatsApp Web (`fb-error`'s `err()`, minificada como `s` en
+`cmqMr-wgNWt.js` — un helper genérico de construcción de errores usado en
+toda la app, no específico de este bug, así que su ubicación en el stack no
+dice nada por sí sola de dónde viene el problema real).
+
+**Un intento de aislar el punto exacto con un breakpoint condicional de
+CDP (`Debugger.setBreakpoint` en la función `s` de `fb-error`, con
+condición sobre el mensaje) no disparó** — probablemente porque WhatsApp
+Web tiene más de una copia/contexto de ese chunk cargada, o porque la
+sesión de debugging no cubre el contexto de ejecución correcto. Un
+segundo intento, envolviendo `window.require('fb-error').err` a mano
+(monkeypatch en vivo, sin debugger) para capturar el stack síncrono
+completo, **rompió el flujo de clic de "enviar" de la app en vivo** (dejó
+de intentar el envío directamente, sin loguear nada) — se revirtió de
+inmediato (`mod.err = window.__origFbErr`) y se confirmó restaurado, pero
+sirve de advertencia: **cualquier intento de instrumentar `fb-error` u
+otras funciones compartidas de WhatsApp Web en la sesión en vivo real del
+usuario es riesgoso** — esa función se usa para construir errores de todo
+tipo en toda la app, no sólo el nuestro. Si se retoma este diagnóstico,
+hacerlo contra una sesión de WhatsApp descartable (número de prueba), no
+contra la sesión real del usuario.
+
+**Antes de seguir investigando esto:**
+1. Repetir los mismos tres chequeos de la sección de arriba (versión de
+   npm, estado de issues/PRs) — puede que para cuando se retome ya haya
+   un fix real mergeado en la librería o en el fork.
+2. Si se vuelve a intentar aislar la causa exacta con un breakpoint o un
+   monkeypatch en vivo, hacerlo contra una cuenta/número de WhatsApp de
+   prueba, nunca contra la sesión real que el usuario usa día a día.
+3. **No verificado en esta sesión si enviar texto plano (sin adjunto)
+   también falla** — no se probó. `sendMessage()` (texto) construye el
+   mismo `newMsgKey` que `sendImage()` dentro de `WWebJS.sendMessage()`,
+   así que si el bug real está en ese camino común (y no específicamente
+   en `processMediaData`/la parte de medios), textos también deberían
+   estar rotos. Confirmar esto primero la próxima vez — acota mucho dónde
+   mirar. Si sólo falla con adjuntos, la pista está en la parte de medios
+   (`mediaOptions`/`mediaOptions.toJSON()` mezclado en el objeto
+   `message`); si falla también con texto plano, la pista está en algo
+   común a `addAndSendMsgToChat()` que no se llegó a probar en
+   aislamiento. Mientras no esté resuelto, la única vía confirmada para
+   mandar una imagen es WhatsApp en el teléfono directamente.
+
+**Chequeo repetido (2026-09-21), sin fix todavía:**
+1. `npm view whatsapp-web.js version` → sigue en `1.34.7`, sin cambios.
+2. Issue #201862 (el que cubre justo `t: t` en `sendMessage(media)`): sigue
+   **abierto**. Últimos comentarios (agosto) son gente pidiendo que se
+   mergee algo, sin novedad de fix.
+3. PR #201832 (la que tenemos fijada en `package.json`, en el commit
+   `92f443fb`): sigue **abierta, sin mergear** —
+   `mergeStateStatus: BLOCKED` (bloqueada por revisión pendiente del
+   maintainer @pedroslopez, que figura como reviewer solicitado, no
+   aprobado; hay 5 aprobaciones de colaboradores/contributors). El diff y
+   los comentarios de esa PR (`Base._normalizeId()`, reacciones, votos de
+   encuesta, `lastReceivedKey` de `getChatModel`) siguen sin tocar el
+   camino de `newMsgKey` en `WWebJS.sendMessage()` que es la causa de
+   nuestro bug puntual — no cambia nada respecto de lo ya documentado
+   arriba (2026-09-17): esta PR no cubre este ángulo, mergeada o no.
+4. PR #201871 (la competidora, que dice resolver #201862 entre otros):
+   sigue **abierta, sin mergear**. Sin comentarios nuevos desde
+   2026-08-14 (@zh1cheng reportando que no arregla el crash de
+   `Client.js:1729`, que es el de `getChats()`, no el de `sendMessage`) —
+   nadie confirmó en el hilo que resuelva el ángulo de envío de medios
+   tampoco.
+
+Conclusión: no hay nada nuevo que mergear ni en npm ni en ninguna de las
+dos PRs en danza. Sigue sin haber vía confirmada para mandar imágenes
+desde acá — la recomendación de la sección de arriba (usar el teléfono
+directamente para adjuntos) sigue vigente.
+
 ## Pestaña de Slack (agregada 2026-08-10)
 
 Segunda pestaña arriba de todo, repite la misma figura de WhatsApp (lista
