@@ -343,6 +343,57 @@ async function pushChatListOnce() {
   }
 }
 
+// Bloqueador real, encontrado el 2026-09-17: enviar imágenes (y adjuntos en
+// general) fallaba en silencio — el composer los "pegaba" sin enviar y
+// whatsapp.js logueaba "Data passed to getter must include an id property
+// (it's how we memoize) but got undefined". Mismo origen que el bloqueador
+// de julio 2026 ya documentado en CLAUDE.md (WhatsApp Web dejó Webpack y
+// renombró `_serialized` a `$1` en la clase `MsgKey`), pero un ángulo
+// distinto: el parche del fork fijado en package.json (PR #201832) sólo
+// normaliza objetos que ya cruzaron al lado Node (via Base._normalizeId()),
+// no las instancias que WhatsApp Web construye y usa puramente ADENTRO de
+// la página. Cada mensaje saliente nuevo arma un `MsgKey` fresco
+// (`newMsgKey`, ver whatsapp-web.js/src/util/Injected/Utils.js,
+// `WWebJS.sendMessage`) y el propio código interno de WhatsApp lo usa para
+// indexar/memoizar el mensaje ANTES de que whatsapp-web.js tenga chance de
+// devolverlo a Node — ahí revienta, con `getChats()`/`getChatById()` sin
+// verse afectados porque esos sí terminan pasando por el normalizador del
+// lado Node. Confirmado en vivo contra la sesión real (Puppeteer, vía
+// remote debugging port): `WAWebMsgKey.prototype` no tiene getter
+// `_serialized` y una instancia recién creada sólo expone el valor real
+// bajo `.$1`. Reportado (sin fix aceptado en el fork ni en upstream a esta
+// fecha) en github.com/wwebjs/whatsapp-web.js/issues/201862 — la propuesta
+// de fix más liviana y verificada por la comunidad (un solo getter en el
+// prototype, en vez de parchear cada call site) es de @lucis en ese mismo
+// hilo. La aplicamos acá en vez de esperar a que se mergee upstream: un
+// getter en `MsgKey.prototype` que expone `_serialized` como alias de
+// `$1` cubre de una sola vez cualquier lectura interna de WhatsApp Web,
+// no sólo los call sites que ya conocemos. Se corre una vez por sesión
+// (idempotente — no pisa el getter si por algún motivo ya existe, por
+// ejemplo si un futuro release de WhatsApp Web vuelve a exponer
+// `_serialized` nativo) apenas dispara 'ready', antes de mandar cualquier
+// mensaje. No probado contra el caso de grupos con mensajes de audio
+// citado en la sección de arriba del CLAUDE.md — si algún día ese caveat
+// resulta estar relacionado, revisar si aplica el mismo mecanismo.
+async function patchMsgKeySerialized() {
+  try {
+    await client.pupPage.evaluate(() => {
+      const MsgKey = window.require('WAWebMsgKey');
+      const proto = MsgKey && MsgKey.prototype;
+      if (proto && !Object.getOwnPropertyDescriptor(proto, '_serialized')) {
+        Object.defineProperty(proto, '_serialized', {
+          get() {
+            return this.$1;
+          },
+          configurable: true,
+        });
+      }
+    });
+  } catch (err) {
+    console.error('[wa] patchMsgKeySerialized() falló:', err.message || err);
+  }
+}
+
 function createClient() {
   loadChatNameCache();
   client = new Client({
@@ -402,6 +453,7 @@ function createClient() {
   client.on('ready', async () => {
     readyFired = true;
     if (readyWatchdogTimer) clearTimeout(readyWatchdogTimer);
+    await patchMsgKeySerialized();
     send('wa:status', 'ready');
     await pushChatList();
   });
@@ -477,7 +529,7 @@ async function sendMessage({ chatId, text, mentions, quotedMessageId }) {
     await client.sendMessage(chatId, text, options);
     return { ok: true };
   } catch (err) {
-    console.error('[wa] sendMessage() falló:', err.message || err);
+    console.error('[wa] sendMessage() falló:', err.stack || err.message || err);
     return { ok: false };
   }
 }
@@ -491,7 +543,7 @@ async function sendImage({ chatId, base64, mimetype, filename, caption, quotedMe
     await client.sendMessage(chatId, media, options);
     return { ok: true };
   } catch (err) {
-    console.error('[wa] sendImage() falló:', err.message || err);
+    console.error('[wa] sendImage() falló:', err.stack || err.message || err);
     return { ok: false };
   }
 }
