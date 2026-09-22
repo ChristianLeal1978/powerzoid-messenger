@@ -816,6 +816,12 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   cursor: pointer;
 }
 .emoji-picker button:hover { background: var(--bg-hover); }
+.emoji-picker-divider {
+  grid-column: 1 / -1;
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
 
 /* Scrollbars discretos */
 .chat-list::-webkit-scrollbar, .messages::-webkit-scrollbar { width: 6px; }

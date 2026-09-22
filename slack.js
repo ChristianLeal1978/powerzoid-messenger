@@ -76,6 +76,17 @@ const EMOJI_TO_SLACK = {
   '⚡': 'zap', '🌟': 'star2', '🚀': 'rocket', '🎯': 'dart',
   '🤙': 'call_me_hand', '😏': 'smirk', '🫶': 'heart_hands', '🤝': 'handshake',
   '👋': 'wave', '🥶': 'cold_face',
+  '😃': 'smiley', '😄': 'smile', '😆': 'laughing', '😋': 'yum', '😗': 'kissing',
+  '🥰': 'smiling_face_with_three_hearts', '🤩': 'star_struck', '🥺': 'pleading_face',
+  '😤': 'triumph', '😠': 'angry', '😳': 'flushed', '🥵': 'hot_face',
+  '🥴': 'woozy_face', '🤢': 'nauseated_face', '🤧': 'sneezing_face', '😷': 'mask',
+  '🤒': 'face_with_thermometer', '🤕': 'head_bandage', '😵': 'dizzy_face',
+  '🤐': 'zipper_mouth_face', '🤫': 'shushing_face', '🤭': 'face_with_hand_over_mouth',
+  '🙃': 'upside_down_face', '😌': 'relieved', '🤓': 'nerd_face', '👻': 'ghost',
+  '🤖': 'robot_face', '💔': 'broken_heart', '💕': 'two_hearts', '💖': 'sparkling_heart',
+  '🧡': 'orange_heart', '💛': 'yellow_heart', '💚': 'green_heart', '💙': 'blue_heart',
+  '💜': 'purple_heart', '👌': 'ok_hand', '✌️': 'v', '🤘': 'metal',
+  '🤞': 'crossed_fingers', '✊': 'fist', '👊': 'facepunch',
 };
 const SLACK_TO_EMOJI = Object.fromEntries(Object.entries(EMOJI_TO_SLACK).map(([e, s]) => [s, e]));
 

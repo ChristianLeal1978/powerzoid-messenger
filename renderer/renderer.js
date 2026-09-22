@@ -902,6 +902,7 @@ function toggleReactionBar(wrap, msg) {
     closeReactionBar();
     reactingToMessageId = msg.id;
     hideMentionList();
+    populateEmojiPicker();
     positionFloatingPanel(emojiPickerEl);
     emojiPickerEl.classList.remove('hidden');
   });
@@ -1211,27 +1212,78 @@ const EMOJIS = [
   '🙏', '💪', '👀', '✅', '❌', '🔥', '✨', '🎉', '❤️', '💀',
   '😈', '👿', '🤠', '🥲', '🫡', '🤌', '🖤', '💯', '🎊', '🍻',
   '⚡', '🌟', '🚀', '🎯', '🤙', '😏', '🫶', '🤝', '👋', '🥶',
+  '😃', '😄', '😆', '😋', '😗', '🥰', '🤩', '🥺', '😤', '😠',
+  '😳', '🥵', '🥴', '🤢', '🤧', '😷', '🤒', '🤕', '😵', '🤐',
+  '🤫', '🤭', '🙃', '😌', '🤓', '👻', '🤖', '💔', '💕', '💖',
+  '🧡', '💛', '💚', '💙', '💜', '👌', '✌️', '🤘', '🤞', '✊',
+  '👊',
 ];
+
+// Fila de "más usados": cuenta de clicks por emoji, persistida en
+// localStorage (preferencia de este dispositivo, mismo criterio que
+// SPLIT_STORAGE_KEY más abajo — no hace falta sincronizarla ni mandarla al
+// proceso principal). Se recalcula al abrir el picker, no en cada click,
+// para que la fila no salte de lugar mientras se insertan varios emojis
+// seguidos en el composer.
+const EMOJI_USAGE_KEY = 'emojiUsageCounts';
+const MOST_USED_COUNT = 7; // una fila completa (grid-template-columns: repeat(7, 1fr))
+
+function loadEmojiUsage() {
+  try {
+    return JSON.parse(localStorage.getItem(EMOJI_USAGE_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function recordEmojiUsage(emoji) {
+  const usage = loadEmojiUsage();
+  usage[emoji] = (usage[emoji] || 0) + 1;
+  try {
+    localStorage.setItem(EMOJI_USAGE_KEY, JSON.stringify(usage));
+  } catch {
+    // localStorage no disponible (privado/bloqueado): la fila de más
+    // usados simplemente no se arma, no es un error que romper el picker.
+  }
+}
+
+function getMostUsedEmojis() {
+  const usage = loadEmojiUsage();
+  return Object.keys(usage)
+    .filter((emoji) => usage[emoji] > 0 && EMOJIS.includes(emoji))
+    .sort((a, b) => usage[b] - usage[a])
+    .slice(0, MOST_USED_COUNT);
+}
+
+function makeEmojiButton(emoji) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = emoji;
+  b.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    recordEmojiUsage(emoji);
+    if (reactingToMessageId) {
+      const msgId = reactingToMessageId;
+      reactingToMessageId = null;
+      emojiPickerEl.classList.add('hidden');
+      activeApi().reactToMessage(msgId, emoji, selectedChatId);
+    } else {
+      insertAtCursor(emoji);
+    }
+  });
+  return b;
+}
 
 function populateEmojiPicker() {
   emojiPickerEl.innerHTML = '';
-  EMOJIS.forEach((emoji) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = emoji;
-    b.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      if (reactingToMessageId) {
-        const msgId = reactingToMessageId;
-        reactingToMessageId = null;
-        emojiPickerEl.classList.add('hidden');
-        activeApi().reactToMessage(msgId, emoji, selectedChatId);
-      } else {
-        insertAtCursor(emoji);
-      }
-    });
-    emojiPickerEl.appendChild(b);
-  });
+  const mostUsed = getMostUsedEmojis();
+  if (mostUsed.length > 0) {
+    mostUsed.forEach((emoji) => emojiPickerEl.appendChild(makeEmojiButton(emoji)));
+    const divider = document.createElement('div');
+    divider.className = 'emoji-picker-divider';
+    emojiPickerEl.appendChild(divider);
+  }
+  EMOJIS.forEach((emoji) => emojiPickerEl.appendChild(makeEmojiButton(emoji)));
 }
 populateEmojiPicker();
 
@@ -1239,6 +1291,7 @@ emojiBtn.addEventListener('click', () => {
   if (emojiPickerEl.classList.contains('hidden')) {
     reactingToMessageId = null; // el botón de emojis del composer siempre inserta texto
     hideMentionList();
+    populateEmojiPicker();
     positionFloatingPanel(emojiPickerEl);
     emojiPickerEl.classList.remove('hidden');
   } else {
