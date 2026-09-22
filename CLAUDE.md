@@ -183,6 +183,19 @@ dos PRs en danza. Sigue sin haber vía confirmada para mandar imágenes
 desde acá — la recomendación de la sección de arriba (usar el teléfono
 directamente para adjuntos) sigue vigente.
 
+**Chequeo repetido (2026-09-22), sin cambios respecto del día anterior:**
+1. `npm view whatsapp-web.js version` → sigue en `1.34.7`.
+2. Issue #201862 → sigue **abierta**, `updatedAt` no avanzó desde
+   2026-08-14 (el comentario de @zh1cheng); cero actividad nueva.
+3. PR #201832 (la fijada en `package.json`) → sigue **abierta**,
+   `mergeStateStatus: BLOCKED`, mismas 5 aprobaciones de julio/agosto, sin
+   mergear.
+4. PR #201871 → sigue **abierta**, `BLOCKED`, sin comentarios desde
+   2026-07-31.
+
+Conclusión: día sin novedad. Sigue sin haber vía confirmada para mandar
+imágenes desde acá.
+
 ## Pestaña de Slack (agregada 2026-08-10)
 
 Segunda pestaña arriba de todo, repite la misma figura de WhatsApp (lista
