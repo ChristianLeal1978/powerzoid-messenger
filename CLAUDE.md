@@ -62,7 +62,7 @@ Se mantiene además el workaround del lado nuestro: `serializeMessage()` en
 chatId de `msg.from`/`msg.to`, que ya vienen sin necesitar otra consulta al
 Store.
 
-### Bloqueador nuevo y SIN mitigar: enviar imágenes/adjuntos (2026-09-17)
+### Bloqueador de enviar imágenes/adjuntos — mitigado con otro parche comunitario (2026-09-23)
 
 Reportado por el usuario: adjuntar una imagen funciona (el preview se ve
 bien), pero al apretar enviar el mensaje "se pega" — nunca sale, sin error
@@ -195,6 +195,94 @@ directamente para adjuntos) sigue vigente.
 
 Conclusión: día sin novedad. Sigue sin haber vía confirmada para mandar
 imágenes desde acá.
+
+**Actualización 2026-09-23 — causa raíz identificada y parche aplicado:**
+a pedido del usuario se buscó en foros/Reddit si alguien tenía workaround.
+En Reddit no había nada útil, pero en el propio repo de GitHub sí apareció
+lo que faltaba, con la causa raíz exacta (no era la teoría de
+`patchMsgKeySerialized()` de la entrada del 2026-09-17, que se descartó ese
+mismo día por no resolver el crash):
+
+- Issue #201921 (github.com/wwebjs/whatsapp-web.js/issues/201921, abierto
+  2026-09-17): mismo error, reportado por más gente.
+- Issue #201922: diagnóstico de causa raíz. `processMediaData()` devuelve
+  un modelo `MediaData` con una propiedad privada `__x_id`. En
+  `src/util/Injected/Utils.js`, ese modelo se spreadea completo dentro del
+  objeto `message` saliente (`...mediaOptions`), y `__x_id` pisa el `id`
+  real que arma el `Msg`. Cuando WhatsApp Web corre `getValidatedSender()`
+  durante `Msg.initialize`, el id ya está corrompido — el mismo stack que
+  ya teníamos logueado (`sendImage() falló: ... but got undefined`). Solo
+  afecta mensajes con adjunto; texto plano no toca ese camino.
+- PR #201923 (`fix(media): drop __x_id before spreading mediaOptions into
+  outgoing Msg`, autor @jack-rockstar): el fix es una sola línea, `delete
+  message.__x_id;`, agregada en `src/util/Injected/Utils.js` justo después
+  de armar `message`. Sigue **sin mergear** (`mergeStateStatus: BLOCKED`,
+  igual que las otras dos PRs en danza), pero tiene 3 aprobaciones y un
+  comentario de @olirock probándolo en producción ("Tested and solved
+  problem").
+
+Se verificó además que la rama `combined-fixes` del fork de
+@jack-rockstar (`github.com/jack-rockstar/whatsapp-web.js`, commit
+`028b93e55024c0a8c070fa7815d4282f166c0f3d`) trae YA mergeadas las dos
+correcciones que necesitamos: `Base._normalizeId()` (la de la PR #201832,
+la misma que ya teníamos pineada, para `getChats`/`getChatById`) y el
+`delete message.__x_id;` de arriba (para el envío de media) — confirmado
+leyendo el contenido real de `Base.js` y `Utils.js` en esa rama, no solo la
+descripción del PR que la trae.
+
+`package.json` se actualizó para apuntar ahí en vez de al fork anterior:
+```
+"whatsapp-web.js": "github:jack-rockstar/whatsapp-web.js#028b93e55024c0a8c070fa7815d4282f166c0f3d"
+```
+`npm install` + `npm ls whatsapp-web.js` resuelven al commit correcto, y se
+confirmó con `grep` sobre el `node_modules` instalado que ambos fixes están
+presentes en el código real (no solo en la promesa de la rama). `node -c`
+sobre `whatsapp.js`/`main.js` no reporta errores de sintaxis con la
+dependencia nueva.
+
+**Confirmado en vivo (2026-09-23), con un tropiezo en el medio que no era
+del fix:** el mismo cambio de `package.json` se aplicó también al checkout
+principal (`~/Proyectos/powerzoid-messenger`, de donde el usuario corre la
+app de verdad — este parche se había hecho primero solo en el worktree de
+Claude Code, que es una copia aislada, y el primer reinicio del usuario no
+mostró ningún cambio porque corrió contra el checkout viejo sin el fix).
+
+Al reinstalar en el checkout principal y reiniciar, el primer intento
+siguió sin cargar los mensajes — pero no por el fork nuevo: había una
+instancia vieja de Electron todavía corriendo en segundo plano (de un
+reinicio anterior que no había cerrado el proceso del todo) con el Chrome
+headless de Puppeteer sosteniendo el `SingletonLock` de
+`~/.config/powerzoid-messenger/wwebjs_auth/session`. La instancia nueva
+intentaba levantar su propio Chrome contra el mismo perfil, Chromium lo
+rechazaba (`[unhandledRejection] The browser is already running for
+.../wwebjs_auth/session`), y el cliente nunca llegaba a inicializar — de
+ahí que la lista de chats no cargara, sin relación con `__x_id` ni con el
+pin nuevo. Se mató el proceso viejo (`kill -9` sobre el árbol completo,
+el `SIGTERM` inicial no alcanzó para el proceso de Electron) y, tras
+reiniciar la app una vez más ya con el perfil liberado, el usuario
+confirmó: **el envío de imágenes funciona.** No se repitió explícitamente
+la prueba de `getChats()`/`getChatById()` con historial completo, pero la
+lista de chats cargó con normalidad, lo cual ya la ejercita.
+
+Lección para la próxima vez que esta app no cargue tras un reinicio:
+antes de sospechar de la librería o del pin, revisar si quedó una
+instancia vieja de Electron/Chrome corriendo (`ps aux | grep -i
+powerzoid` o `electron`) y matarla — cerrar la ventana no siempre mata el
+proceso.
+
+Si en algún momento se quiere volver al fork anterior por cualquier
+motivo, sigue disponible como fallback inmediato
+(`github:wwebjs/whatsapp-web.js#92f443fb6b4fb3ee52c6576bc640b4a2e17379ae`,
+el mismo commit documentado en la entrada del 2026-08-29 de arriba) — solo
+revertir el pin en `package.json` y `npm install`.
+
+Nota sobre confianza: este commit vive en el fork personal de un
+colaborador externo (@jack-rockstar), no en el repo oficial ni en la PR que
+ya veníamos siguiendo — es una pieza más en la cadena de forks no oficiales
+de la que ya depende este proyecto (ver el fork de la PR #201832 de más
+arriba). Igual que con ese, no hay garantía de que se mantenga o actualice
+a futuro; si algún día cualquiera de las dos PRs upstream (#201832 o
+#201923) se mergea, volver a evaluar apuntar a un release oficial de npm.
 
 ## Pestaña de Slack (agregada 2026-08-10)
 

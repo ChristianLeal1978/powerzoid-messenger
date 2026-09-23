@@ -12,7 +12,7 @@
     "@slack/socket-mode": "^3.0.0",
     "@slack/web-api": "^8.0.0",
     "qrcode": "^1.5.3",
-    "whatsapp-web.js": "github:wwebjs/whatsapp-web.js#92f443fb6b4fb3ee52c6576bc640b4a2e17379ae"
+    "whatsapp-web.js": "github:jack-rockstar/whatsapp-web.js#028b93e55024c0a8c070fa7815d4282f166c0f3d"
   },
   "devDependencies": {
     "electron": "^31.0.0"
