@@ -98,7 +98,7 @@ function saveLastDownloadDir(dir) {
 
 // Extensión -> mimetype para los archivos que se pueden adjuntar. Cubre lo
 // mismo que aceptaba el <input type="file"> que reemplazó
-// ui:selectAttachment (ver más abajo): imágenes comunes + PDF/DOC/DOCX.
+// ui:selectAttachment (ver más abajo): imágenes comunes + PDF + documentos de MS Office (Word, Excel, PowerPoint).
 const ATTACHMENT_MIMETYPES = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -109,6 +109,17 @@ const ATTACHMENT_MIMETYPES = {
   '.pdf': 'application/pdf',
   '.doc': 'application/msword',
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.pps': 'application/vnd.ms-powerpoint',
+  '.ppsx': 'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+  '.odt': 'application/vnd.oasis.opendocument.text',
+  '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+  '.odp': 'application/vnd.oasis.opendocument.presentation',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
 };
 
 async function saveAttachmentToDisk(base64, filename) {

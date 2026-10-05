@@ -996,7 +996,16 @@ window.api.sl.onIncoming((msg) => handleIncoming('sl', msg));
 backBtn.addEventListener('click', closeConversation);
 
 // --- Adjuntar imagen o documento (PDF, DOC, DOCX) ---
-const DOCUMENT_ICONS = { 'application/pdf': '\u{1F4D5}' }; // 📕 para PDF, 📄 genérico para el resto
+const DOCUMENT_ICONS = {
+  'application/pdf': '\u{1F4D5}', // 📕
+  'application/vnd.ms-powerpoint': '\u{1F4D9}', // 📙 PowerPoint
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '\u{1F4D9}',
+  'application/vnd.openxmlformats-officedocument.presentationml.slideshow': '\u{1F4D9}',
+  'application/vnd.ms-excel': '\u{1F4D7}', // 📗 Excel
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '\u{1F4D7}',
+  'application/msword': '\u{1F4D8}', // 📘 Word
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '\u{1F4D8}',
+}; // 📄 genérico para el resto
 
 // El selector de archivo lo abre el proceso main (dialog.showOpenDialog en
 // ui:selectAttachment) en vez de un <input type="file"> del renderer: ese
