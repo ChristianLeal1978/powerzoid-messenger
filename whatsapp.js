@@ -547,6 +547,9 @@ async function sendImage({ chatId, base64, mimetype, filename, caption, quotedMe
     const options = {};
     if (caption) options.caption = caption;
     if (quotedMessageId) options.quotedMessageId = quotedMessageId;
+    // El Chromium de Puppeteer suele no tener códecs H.264/AAC: un video
+    // enviado como video "normal" puede quedar roto, así que va como archivo.
+    if (mimetype && mimetype.startsWith('video/')) options.sendMediaAsDocument = true;
     await client.sendMessage(chatId, media, options);
     return { ok: true };
   } catch (err) {

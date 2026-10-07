@@ -120,7 +120,16 @@ const ATTACHMENT_MIMETYPES = {
   '.odp': 'application/vnd.oasis.opendocument.presentation',
   '.txt': 'text/plain',
   '.csv': 'text/csv',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
 };
+
+// El archivo viaja entero en base64 por IPC, así que ponemos un tope para no
+// disparar la memoria con un video enorme.
+const MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024;
 
 async function saveAttachmentToDisk(base64, filename) {
   const lastDir = loadLastDownloadDir();
@@ -239,7 +248,7 @@ ipcMain.handle('ui:selectAttachment', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     properties: ['openFile'],
     filters: [
-      { name: 'Imágenes y documentos', extensions: Object.keys(ATTACHMENT_MIMETYPES).map((ext) => ext.slice(1)) },
+      { name: 'Imágenes, documentos y videos', extensions: Object.keys(ATTACHMENT_MIMETYPES).map((ext) => ext.slice(1)) },
     ],
   });
   if (canceled || !filePaths.length) return { ok: false, canceled: true };
@@ -247,6 +256,9 @@ ipcMain.handle('ui:selectAttachment', async () => {
   const mimetype = ATTACHMENT_MIMETYPES[path.extname(filePath).toLowerCase()];
   if (!mimetype) return { ok: false }; // extensión fuera del filtro (ej. eligió "Todos los archivos")
   try {
+    if (fs.statSync(filePath).size > MAX_ATTACHMENT_BYTES) {
+      return { ok: false, tooBig: true, maxMb: MAX_ATTACHMENT_BYTES / 1024 / 1024 };
+    }
     const base64 = fs.readFileSync(filePath).toString('base64');
     return { ok: true, base64, mimetype, filename: path.basename(filePath) };
   } catch (err) {

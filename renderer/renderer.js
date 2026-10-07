@@ -1031,6 +1031,10 @@ const DOCUMENT_ICONS = {
 // comentario en main.js).
 attachBtn.addEventListener('click', async () => {
   const res = await window.api.ui.selectAttachment();
+  if (res.tooBig) {
+    alert(`El archivo supera el máximo de ${res.maxMb} MB.`);
+    return;
+  }
   if (!res.ok) return; // cancelado, o el main process ya logueó el error
   pendingAttachment = { base64: res.base64, mimetype: res.mimetype, filename: res.filename };
   showAttachmentPreview(pendingAttachment);
@@ -1043,7 +1047,7 @@ function showAttachmentPreview(attachment) {
     imagePreviewImg.classList.remove('hidden');
     filePreviewChip.classList.add('hidden');
   } else {
-    filePreviewIcon.textContent = DOCUMENT_ICONS[attachment.mimetype] || '\u{1F4C4}';
+    filePreviewIcon.textContent = DOCUMENT_ICONS[attachment.mimetype] || (attachment.mimetype.startsWith('video/') ? '\u{1F3AC}' : '\u{1F4C4}');
     filePreviewName.textContent = attachment.filename;
     filePreviewChip.classList.remove('hidden');
     imagePreviewImg.classList.add('hidden');
