@@ -552,15 +552,32 @@ async function sendMessage({ chatId, text, mentions, quotedMessageId }) {
   }
 }
 
+const VIDEO_MAX_INLINE_BYTES = 16 * 1024 * 1024;
+
 async function sendImage({ chatId, base64, mimetype, filename, caption, quotedMessageId }) {
   try {
     const media = new MessageMedia(mimetype, base64, filename);
     const options = {};
     if (caption) options.caption = caption;
     if (quotedMessageId) options.quotedMessageId = quotedMessageId;
-    // El Chromium de Puppeteer suele no tener códecs H.264/AAC: un video
-    // enviado como video "normal" puede quedar roto, así que va como archivo.
-    if (mimetype && mimetype.startsWith('video/')) options.sendMediaAsDocument = true;
+    // Video: MP4/MOV de hasta 16 MB (tope de WhatsApp para videos "normales")
+    // se intentan como video reproducible; si falla, se reintenta como
+    // documento para no perder el archivo. El resto de formatos y los
+    // videos grandes van directo como documento.
+    const isVideo = mimetype && mimetype.startsWith('video/');
+    if (isVideo) {
+      const bytes = Buffer.byteLength(base64, 'base64');
+      const asVideo = (mimetype === 'video/mp4' || mimetype === 'video/quicktime') && bytes <= VIDEO_MAX_INLINE_BYTES;
+      if (asVideo) {
+        try {
+          await client.sendMessage(chatId, media, options);
+          return { ok: true };
+        } catch (err) {
+          console.error('[wa] sendImage() como video falló, reintentando como documento:', err.stack || err.message || err);
+        }
+      }
+      options.sendMediaAsDocument = true;
+    }
     await client.sendMessage(chatId, media, options);
     return { ok: true };
   } catch (err) {
