@@ -39,6 +39,8 @@ const replyPreviewText = document.getElementById('reply-preview-text');
 const replyPreviewRemove = document.getElementById('reply-preview-remove');
 const lightboxEl = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
+const lightboxVideo = document.getElementById('lightbox-video');
+const lightboxStatus = document.getElementById('lightbox-status');
 const topbarTitle = document.getElementById('topbar-title');
 const chatSearchInput = document.getElementById('chat-search-input');
 const searchBtn = document.getElementById('search-btn');
@@ -748,6 +750,8 @@ function renderMessage(msg) {
     ? `<img class="sticker" src="${msg.sticker}" alt="sticker" />`
     : msg.image
     ? `<img class="msg-image" src="${msg.image}" alt="imagen" />${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
+    : msg.isVideo
+    ? `<div class="msg-video">${msg.videoThumb ? `<img src="${msg.videoThumb}" alt="video" />` : '<span class="video-label">🎬 Video</span>'}<span class="play">▶</span></div>${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
     : msg.audio
     ? // Por ahora solo lo puebla slack.js (getFirstAudio()) — pedido del
       // usuario, 2026-09-11: poder escuchar un audio de Slack sin tener que
@@ -793,6 +797,15 @@ function renderMessage(msg) {
       imgEl.addEventListener('click', (e) => {
         e.stopPropagation();
         openLightbox(msg.image);
+      });
+    }
+  }
+  if (msg.isVideo) {
+    const videoEl = b.querySelector('.msg-video');
+    if (videoEl) {
+      videoEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openVideoLightbox(msg);
       });
     }
   }
@@ -844,9 +857,43 @@ async function openLightbox(src) {
   await window.api.ui.expandForLightbox();
 }
 
+// Video: se baja recién al hacer clic y se reproduce en el mismo visor.
+async function openVideoLightbox(msg) {
+  lightboxImg.classList.add('hidden');
+  lightboxVideo.classList.add('hidden');
+  lightboxStatus.textContent = 'Cargando video…';
+  lightboxStatus.classList.remove('hidden');
+  lightboxEl.classList.remove('hidden');
+  await window.api.ui.expandForLightbox();
+  const res = await activeApi().getVideo(msg.id, selectedChatId);
+  if (lightboxEl.classList.contains('hidden')) return; // lo cerraron mientras bajaba
+  if (!res.ok) {
+    lightboxStatus.textContent = res.tooBig
+      ? `El video supera ${res.maxMb} MB: usa el botón de descarga (⭳) para guardarlo.`
+      : 'No se pudo cargar el video. Prueba con el botón de descarga (⭳).';
+    return;
+  }
+  lightboxVideo.onerror = () => {
+    lightboxVideo.classList.add('hidden');
+    lightboxStatus.textContent = 'Este formato no se puede reproducir aquí: usa el botón de descarga (⭳).';
+    lightboxStatus.classList.remove('hidden');
+  };
+  lightboxVideo.src = res.dataUri;
+  lightboxStatus.classList.add('hidden');
+  lightboxVideo.classList.remove('hidden');
+  lightboxVideo.play().catch(() => {});
+}
+lightboxVideo.addEventListener('click', (e) => e.stopPropagation());
+
 async function closeLightbox() {
   lightboxEl.classList.add('hidden');
   lightboxImg.src = '';
+  lightboxVideo.pause();
+  lightboxVideo.removeAttribute('src');
+  lightboxVideo.load();
+  lightboxVideo.classList.add('hidden');
+  lightboxStatus.classList.add('hidden');
+  lightboxImg.classList.remove('hidden');
   await window.api.ui.collapseFromLightbox();
 }
 

@@ -236,6 +236,15 @@ async function resolveMentionsInBody(msg) {
   return body;
 }
 
+// Los videos recibidos traen una miniatura JPEG incrustada en el propio
+// mensaje (msg._data.body, base64) — sirve de vista previa sin descargar el
+// video entero (eso se hace recién al hacer clic, ver downloadAttachment()).
+function getVideoThumb(msg) {
+  if (msg.type !== 'video') return null;
+  const thumb = msg._data && msg._data.body;
+  return typeof thumb === 'string' && thumb ? `data:image/jpeg;base64,${thumb}` : null;
+}
+
 async function serializeMessage(msg) {
   // OJO: evitamos msg.getChat() a propósito. Internamente hace otra consulta
   // al Store (client.getChatById) que hoy está rota en whatsapp-web.js (ver
@@ -260,6 +269,8 @@ async function serializeMessage(msg) {
     type: msg.type,
     sticker: msg.type === 'sticker' ? mediaDataUri : null,
     image: msg.type === 'image' ? mediaDataUri : null,
+    isVideo: msg.type === 'video',
+    videoThumb: getVideoThumb(msg),
     contacts: getContacts(msg),
     reactions: await getReactionsSummary(msg),
   };

@@ -18,6 +18,7 @@ const wa = {
   reactToMessage: (messageId, emoji, chatId) => ipcRenderer.invoke('wa:reactToMessage', { messageId, emoji, chatId }),
   regenerateQr: () => ipcRenderer.invoke('wa:regenerateQr'),
   downloadAttachment: (messageId, chatId) => ipcRenderer.invoke('wa:downloadAttachment', { messageId, chatId }),
+  getVideo: (messageId, chatId) => ipcRenderer.invoke('wa:getVideo', { messageId, chatId }),
 };
 
 const sl = {
@@ -40,6 +41,7 @@ const sl = {
   openChannel: (channelId) => ipcRenderer.invoke('sl:openChannel', channelId),
   unpinChannel: (channelId) => ipcRenderer.invoke('sl:unpinChannel', channelId),
   downloadAttachment: (messageId, chatId) => ipcRenderer.invoke('sl:downloadAttachment', { messageId, chatId }),
+  getVideo: (messageId, chatId) => ipcRenderer.invoke('sl:getVideo', { messageId, chatId }),
 };
 
 const ui = {

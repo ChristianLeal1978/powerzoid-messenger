@@ -248,6 +248,15 @@ async function getFirstAudio(msg) {
   return fetchAsDataUri(file.url_private, userToken);
 }
 
+// Miniatura del primer video adjunto (si Slack la trae) — vista previa sin
+// bajar el video entero, que se pide recién al hacer clic (downloadAttachment()).
+async function getVideoInfo(msg) {
+  const file = findFirstFile(msg, 'video/');
+  if (!file) return { isVideo: false, videoThumb: null };
+  const thumbUrl = file.thumb_video || file.thumb_360 || file.thumb_160;
+  return { isVideo: true, videoThumb: thumbUrl ? await fetchAsDataUri(thumbUrl, userToken) : null };
+}
+
 // Resumen del mensaje raíz de un hilo, para la vista previa citada
 // (renderer.js, `.quoted-preview` — mismo bloque visual que ya usa WhatsApp
 // para "responder a un mensaje puntual", ver CLAUDE.md). Solo se llama para
@@ -271,6 +280,7 @@ async function serializeMessage(msg, channelId, quoted) {
   // Un mensaje no trae imagen Y audio a la vez en la práctica — si algún
   // día pasara, la imagen gana (mismo orden que el resto de esta función).
   const audio = image ? null : await getFirstAudio(msg);
+  const video = image || audio ? { isVideo: false, videoThumb: null } : await getVideoInfo(msg);
   return {
     id: msg.ts,
     chatId: channelId,
@@ -280,10 +290,12 @@ async function serializeMessage(msg, channelId, quoted) {
     author: authorId,
     authorName,
     hasMedia: !!(msg.files && msg.files.length),
-    type: image ? 'image' : audio ? 'audio' : 'text',
+    type: image ? 'image' : audio ? 'audio' : video.isVideo ? 'video' : 'text',
     sticker: null,
     image,
     audio,
+    isVideo: video.isVideo,
+    videoThumb: video.videoThumb,
     quoted: quoted || null,
     reactions: (msg.reactions || []).map((r) => ({
       emoji: slackNameToEmoji(r.name),

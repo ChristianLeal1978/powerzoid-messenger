@@ -782,6 +782,41 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   border-radius: 6px;
 }
 
+.lightbox video {
+  display: block;
+  max-width: 94%;
+  max-height: 94%;
+  border-radius: 6px;
+  cursor: default;
+}
+.lightbox-status { color: var(--text); font-size: 13px; text-align: center; padding: 0 20px; }
+.msg-video {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  min-height: 90px;
+  max-width: 100%;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  cursor: pointer;
+  overflow: hidden;
+}
+.msg-video img { display: block; max-width: 100%; max-height: 220px; object-fit: contain; }
+.msg-video .play {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  line-height: 38px;
+  text-align: center;
+  border-radius: 50%;
+  background: rgba(6, 9, 10, 0.65);
+  color: #fff;
+  font-size: 16px;
+}
+.msg-video .video-label { position: absolute; bottom: 4px; left: 6px; font-size: 10px; color: #fff; text-shadow: 0 0 3px #000; }
+
 /* --- Menciones y picker de emojis: paneles flotantes sobre el composer --- */
 .mention-list, .emoji-picker {
   position: absolute;

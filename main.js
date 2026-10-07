@@ -267,6 +267,18 @@ ipcMain.handle('ui:selectAttachment', async () => {
   }
 });
 
+// Reproducción de video dentro de la ventana: baja el adjunto recién al hacer
+// clic y lo devuelve como data URI (con el mismo tope que al adjuntar).
+async function loadVideoForPlayback(res) {
+  if (!res.ok) return { ok: false };
+  if (Buffer.byteLength(res.base64, 'base64') > MAX_ATTACHMENT_BYTES) {
+    return { ok: false, tooBig: true, maxMb: MAX_ATTACHMENT_BYTES / 1024 / 1024 };
+  }
+  return { ok: true, dataUri: `data:${res.mimetype || 'video/mp4'};base64,${res.base64}` };
+}
+ipcMain.handle('wa:getVideo', async (_e, payload) => loadVideoForPlayback(await whatsapp.downloadAttachment(payload)));
+ipcMain.handle('sl:getVideo', async (_e, payload) => loadVideoForPlayback(await slack.downloadAttachment(payload)));
+
 // --- IPC: WhatsApp ---
 ipcMain.handle('wa:regenerateQr', () => whatsapp.regenerateQr());
 ipcMain.handle('wa:getMessages', (_e, chatId) => whatsapp.getMessages(chatId));
