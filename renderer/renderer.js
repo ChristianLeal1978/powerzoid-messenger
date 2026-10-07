@@ -688,6 +688,15 @@ function linkifyHtml(text) {
   });
 }
 
+// Estado de entrega de WhatsApp (msg.ack): -1 error, 0 pendiente, 1 enviado,
+// 2 entregado, 3 leído, 4 reproducido. Slack no manda ack, no se muestra.
+function ackHtml(ack) {
+  const map = { '-1': ['!', 'Error al enviar', 'err'], 0: ['🕓', 'Enviando', ''], 1: ['✓', 'Enviado', ''],
+    2: ['✓✓', 'Entregado', ''], 3: ['✓✓', 'Leído', 'read'], 4: ['✓✓', 'Reproducido', 'read'] };
+  const [glyph, title, cls] = map[ack] || map[0];
+  return ` <span class="ack ${cls}" title="${title}">${glyph}</span>`;
+}
+
 function renderMessage(msg) {
   // Evita duplicar la burbuja si el mismo mensaje llega dos veces (ej. un
   // mensaje propio de Slack que sí llegara a hacer eco además del reflejo
@@ -748,7 +757,7 @@ function renderMessage(msg) {
     : contactsHtml
     ? contactsHtml
     : linkifyHtml(msg.body || (msg.hasMedia ? '📎 Adjunto' : ''));
-  b.innerHTML = `${authorHtml}${forwardedHtml}${quotedHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}</span>`;
+  b.innerHTML = `${authorHtml}${forwardedHtml}${quotedHtml}${bodyHtml}<span class="t">${formatTime(msg.timestamp)}${msg.fromMe && msg.ack !== undefined ? ackHtml(msg.ack) : ''}</span>`;
   b.addEventListener('click', () => {
     // Ahora que el texto del mensaje es seleccionable (para poder copiarlo),
     // arrastrar el mouse para seleccionar sigue disparando 'click' al
@@ -967,6 +976,14 @@ function handleReactionUpdate(provider, { messageId, chatId, reactions, emoji })
     if (provider === activeProvider) renderChatList();
   }
 }
+window.api.wa.onAck(({ messageId, ack }) => {
+  const wrap = messageElements.get(messageId);
+  const t = wrap && wrap.querySelector('.t');
+  if (!t) return;
+  const old = t.querySelector('.ack');
+  if (old) old.remove();
+  t.insertAdjacentHTML('beforeend', ackHtml(ack));
+});
 window.api.wa.onReactionUpdate((p) => handleReactionUpdate('wa', p));
 window.api.sl.onReactionUpdate((p) => handleReactionUpdate('sl', p));
 

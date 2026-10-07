@@ -445,6 +445,9 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   font-size: 9.5px;
   color: var(--text-dim);
 }
+.bubble .t .ack { margin-left: 2px; letter-spacing: -2px; }
+.bubble .t .ack.read { color: #4fa8ff; }
+.bubble .t .ack.err { color: var(--danger); }
 .bubble .author {
   display: block;
   font-size: 10.5px;

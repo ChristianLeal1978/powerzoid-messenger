@@ -246,6 +246,7 @@ async function serializeMessage(msg) {
     id: msg.id._serialized,
     chatId: msg.fromMe ? msg.to : msg.from,
     fromMe: msg.fromMe,
+    ack: msg.fromMe ? msg.ack : undefined,
     body: await resolveMentionsInBody(msg),
     timestamp: msg.timestamp,
     author: msg.author || null,
@@ -471,6 +472,12 @@ function createClient() {
       send('wa:incoming', await serializeMessage(msg));
       pushChatList();
     }
+  });
+
+  // Estado de entrega de mensajes propios (reloj/✓/✓✓/✓✓ azul).
+  client.on('message_ack', (msg, ack) => {
+    if (!msg.fromMe || !msg.id) return;
+    send('wa:ack', { messageId: msg.id._serialized, ack });
   });
 
   client.on('message_reaction', async (reaction) => {

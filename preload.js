@@ -7,6 +7,7 @@ const wa = {
   onChatsError: (cb) => ipcRenderer.on('wa:chats-error', (_e, payload) => cb(payload)),
   onChatsSyncing: (cb) => ipcRenderer.on('wa:chats-syncing', (_e, payload) => cb(payload)),
   onIncoming: (cb) => ipcRenderer.on('wa:incoming', (_e, msg) => cb(msg)),
+  onAck: (cb) => ipcRenderer.on('wa:ack', (_e, payload) => cb(payload)),
   onReactionUpdate: (cb) => ipcRenderer.on('wa:reactionUpdate', (_e, payload) => cb(payload)),
   getMessages: (chatId) => ipcRenderer.invoke('wa:getMessages', chatId),
   sendMessage: (chatId, text, mentions, quotedMessageId) =>
