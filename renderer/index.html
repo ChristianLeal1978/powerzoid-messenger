@@ -13,8 +13,18 @@
   <div class="rail" id="rail"></div>
 
   <div class="tab-bar" id="tab-bar">
+    <button type="button" class="menu-btn" id="menu-btn" aria-label="Menú" aria-haspopup="true">&#9776;</button>
     <button type="button" class="tab-btn active" data-provider="wa">WhatsApp<span class="tab-dot hidden"></span></button>
     <button type="button" class="tab-btn" data-provider="sl">Slack<span class="tab-dot hidden"></span></button>
+  </div>
+
+  <div class="app-menu hidden" id="app-menu">
+    <button type="button" class="menu-item" id="menu-opacity">Opacidad</button>
+    <div class="opacity-panel hidden" id="opacity-panel">
+      <span>Opacidad: <b id="opacity-value">90</b>%</span>
+      <input type="range" id="opacity-slider" min="20" max="100" step="1" value="90" />
+    </div>
+    <button type="button" class="menu-item" id="menu-slack-creds">Credenciales Slack</button>
   </div>
 
   <!-- Pantalla de emparejamiento por QR (WhatsApp) -->
@@ -55,7 +65,6 @@
       <span class="topbar-title" id="topbar-title">WhatsApp</span>
       <input type="text" id="chat-search-input" class="chat-search-input hidden" placeholder="Buscar persona o grupo…" />
       <button type="button" id="chat-search-clear-btn" class="search-btn chat-search-clear hidden" aria-label="Limpiar búsqueda">&times;</button>
-      <button type="button" id="slack-disconnect-btn" class="search-btn hidden" aria-label="Desconectar Slack" title="Cambiar credenciales de Slack">&#9881;</button>
       <button type="button" id="search-btn" class="search-btn" aria-label="Buscar chats">&#128269;</button>
     </header>
 

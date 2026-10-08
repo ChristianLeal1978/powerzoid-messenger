@@ -8,7 +8,6 @@ const slackUserTokenInput = document.getElementById('slack-user-token');
 const slackAppTokenInput = document.getElementById('slack-app-token');
 const slackConnectBtn = document.getElementById('slack-connect-btn');
 const slackPairingStatus = document.getElementById('slack-pairing-status');
-const slackDisconnectBtn = document.getElementById('slack-disconnect-btn');
 const tabButtons = document.querySelectorAll('.tab-btn');
 const app = document.getElementById('app');
 const rail = document.getElementById('rail');
@@ -199,13 +198,12 @@ function renderActiveScreen() {
   // app aunque se caiga la conexión (mismo criterio que ya tenía WhatsApp:
   // un 'disconnected' solo cambia el color del punto, no oculta la app) —
   // excepto si el estado es explícitamente 'not-configured' (Slack
-  // desconectado a propósito desde el botón de engranaje).
+  // desconectado a propósito desde el menú ☰).
   const showApp = pd.status === 'ready' || (pd.everReady && pd.status !== 'not-configured');
 
   qrScreen.classList.toggle('hidden', !(activeProvider === 'wa' && !showApp));
   slackPairingScreen.classList.toggle('hidden', !(activeProvider === 'sl' && !showApp));
   app.classList.toggle('hidden', !showApp);
-  slackDisconnectBtn.classList.toggle('hidden', !(activeProvider === 'sl' && showApp));
 
   if (activeProvider === 'sl' && !showApp) {
     slackPairingStatus.textContent = slackStatusMessage(pd.status);
@@ -330,16 +328,55 @@ slackPairingForm.addEventListener('submit', async (e) => {
 
 window.api.sl.onStatus((status) => handleStatus('sl', status));
 
-slackDisconnectBtn.addEventListener('click', async () => {
-  const confirmed = window.confirm('¿Desconectar Slack? Vas a tener que volver a pegar los tokens para reconectar.');
-  if (!confirmed) return;
-  await window.api.sl.disconnect();
-  slackUserTokenInput.value = '';
-  slackAppTokenInput.value = '';
-  providerData.sl.chats = [];
-  providerData.sl.everReady = false;
-  closeConversation();
+async function slackCredentialsAction() {
+  const pd = providerData.sl;
+  const connected = pd.everReady && pd.status !== 'not-configured';
+  if (connected) {
+    const confirmed = window.confirm('¿Desconectar Slack? Vas a tener que volver a pegar los tokens para reconectar.');
+    if (!confirmed) return;
+    await window.api.sl.disconnect();
+    slackUserTokenInput.value = '';
+    slackAppTokenInput.value = '';
+    providerData.sl.chats = [];
+    providerData.sl.everReady = false;
+    closeConversation();
+  }
+  document.querySelector('.tab-btn[data-provider="sl"]').click();
+}
+
+// --- Menú de hamburguesa ---
+const menuBtn = document.getElementById('menu-btn');
+const appMenu = document.getElementById('app-menu');
+const opacityPanel = document.getElementById('opacity-panel');
+const opacitySlider = document.getElementById('opacity-slider');
+const opacityValue = document.getElementById('opacity-value');
+
+function applyOpacity(pct) {
+  document.documentElement.style.setProperty('--panel-alpha', String(pct / 100));
+  opacitySlider.value = pct;
+  opacityValue.textContent = pct;
+}
+
+menuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  appMenu.classList.toggle('hidden');
+  opacityPanel.classList.add('hidden');
 });
+appMenu.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => appMenu.classList.add('hidden'));
+document.getElementById('menu-opacity').addEventListener('click', () => {
+  opacityPanel.classList.toggle('hidden');
+});
+document.getElementById('menu-slack-creds').addEventListener('click', () => {
+  appMenu.classList.add('hidden');
+  slackCredentialsAction();
+});
+opacitySlider.addEventListener('input', () => {
+  const pct = Number(opacitySlider.value);
+  applyOpacity(pct);
+  window.api.ui.setOpacity(pct);
+});
+window.api.ui.getOpacity().then((pct) => applyOpacity(pct));
 
 // --- Lista de chats ---
 function handleChats(provider, list) {

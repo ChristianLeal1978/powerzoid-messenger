@@ -191,8 +191,8 @@ En la barra, cambia a la pestaña Slack y pega ambos tokens (User OAuth
 Token y App-Level Token) en la pantalla de emparejamiento. Quedan guardados
 localmente (cifrados con el keyring del sistema vía `safeStorage` de
 Electron, en `~/.config/powerzoid-messenger/slack-credentials.json`), así que
-no hay que repetir esto en cada inicio. El engranaje (⚙) junto al buscador,
-visible solo en la pestaña de Slack, permite desconectar y volver a
+no hay que repetir esto en cada inicio. La opción "Credenciales Slack" del
+menú ☰ (esquina superior izquierda) permite desconectar y volver a
 emparejar con otros tokens.
 
 Los canales normales solo entran a la lista cuando el último mensaje te

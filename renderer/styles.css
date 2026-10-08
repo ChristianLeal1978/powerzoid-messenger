@@ -1,7 +1,10 @@
 :root {
-  --bg: #12181b;
-  --bg-elevated: #1b2327;
-  --bg-hover: #232c31;
+  /* Opacidad de los fondos (ajustable desde el menú ☰); solo afecta fondos,
+     el texto y las imágenes siguen nítidos. Se sobreescribe desde JS. */
+  --panel-alpha: 0.9;
+  --bg: rgba(18, 24, 27, var(--panel-alpha));
+  --bg-elevated: rgba(27, 35, 39, var(--panel-alpha));
+  --bg-hover: rgba(35, 44, 49, var(--panel-alpha));
   --border: #263136;
   --accent: #5fbe96;
   --accent-soft: rgba(95, 190, 150, 0.16);
@@ -29,7 +32,7 @@ html, body {
   -webkit-app-region: drag;
 }
 
-button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-list, .emoji-picker, .lightbox {
+button, input, textarea, .composer, .chat-row, .messages, .app-menu, .menu-btn, .divider, .mention-list, .emoji-picker, .lightbox {
   -webkit-app-region: no-drag;
 }
 
@@ -87,6 +90,49 @@ button, input, textarea, .composer, .chat-row, .messages, .divider, .mention-lis
   margin-left: 6px;
   vertical-align: middle;
 }
+
+/* --- Menú de hamburguesa --- */
+.menu-btn {
+  flex: 0 0 var(--tabbar-h);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+.menu-btn:hover { color: var(--text); background: var(--bg-hover); }
+.app-menu {
+  position: fixed;
+  top: var(--tabbar-h);
+  left: 6px;
+  z-index: 60;
+  min-width: 200px;
+  padding: 4px;
+  background: #1b2327;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item:hover { background: var(--bg-hover); }
+.opacity-panel {
+  padding: 6px 10px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.opacity-panel input[type="range"] { width: 100%; accent-color: var(--accent); margin-top: 6px; }
 
 /* --- Pantalla QR --- */
 #qr-screen, #slack-pairing-screen {

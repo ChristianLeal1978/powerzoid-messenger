@@ -28,6 +28,33 @@ let win;
 // expandir dos veces seguidas (ej. dos imágenes abiertas rápido).
 let savedBoundsForLightbox = null;
 
+// Opacidad de los fondos de la interfaz (porcentaje 20-100), persistida en
+// userData. La aplica el renderer vía CSS (--panel-alpha); la ventana es
+// transparent:true, que solo se puede fijar al crearla.
+const DEFAULT_OPACITY = 90;
+function uiSettingsPath() {
+  return path.join(app.getPath('userData'), 'ui-settings.json');
+}
+function loadOpacity() {
+  try {
+    const v = Number(JSON.parse(fs.readFileSync(uiSettingsPath(), 'utf8')).opacity);
+    return Number.isFinite(v) ? Math.min(100, Math.max(20, Math.round(v))) : DEFAULT_OPACITY;
+  } catch (err) {
+    return DEFAULT_OPACITY;
+  }
+}
+ipcMain.handle('ui:getOpacity', () => loadOpacity());
+ipcMain.handle('ui:setOpacity', (_e, pct) => {
+  const v = Math.min(100, Math.max(20, Math.round(Number(pct) || DEFAULT_OPACITY)));
+  try {
+    fs.writeFileSync(uiSettingsPath(), JSON.stringify({ opacity: v }));
+  } catch (err) {
+    console.error('[main] no se pudo guardar la opacidad:', err.message || err);
+    return { ok: false };
+  }
+  return { ok: true };
+});
+
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
 
@@ -41,7 +68,8 @@ function createWindow() {
     frame: false,
     resizable: true,
     skipTaskbar: true,
-    backgroundColor: '#12181b',
+    transparent: true,
+    backgroundColor: '#00000000',
     title: 'Powerzoid Messenger',
     icon: path.join(__dirname, 'assets', 'icon-512.png'),
     webPreferences: {

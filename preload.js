@@ -48,6 +48,8 @@ const ui = {
   expandForLightbox: () => ipcRenderer.invoke('win:expandForLightbox'),
   collapseFromLightbox: () => ipcRenderer.invoke('win:collapseFromLightbox'),
   openExternal: (url) => ipcRenderer.invoke('ui:openExternal', url),
+  getOpacity: () => ipcRenderer.invoke('ui:getOpacity'),
+  setOpacity: (pct) => ipcRenderer.invoke('ui:setOpacity', pct),
   selectAttachment: () => ipcRenderer.invoke('ui:selectAttachment'),
 };
 

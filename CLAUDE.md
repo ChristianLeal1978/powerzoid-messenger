@@ -720,6 +720,19 @@ mensaje puntual en la respuesta, igual que "Responder" en el WhatsApp oficial.
   soportada esa opción en el commit del fork fijado en `package.json` (ver
   sección de arriba).
 
+## Menú ☰ y opacidad (agregado 2026-10-08)
+
+Botón de hamburguesa en la esquina superior izquierda de la barra de pestañas,
+con dos opciones: **Opacidad** (slider 20–100%) y **Credenciales Slack**
+(reemplaza al engranaje que había en la topbar de Slack: si Slack está
+conectado pide confirmación y desconecta; luego lleva a la pestaña Slack
+para pegar tokens). La ventana es `transparent: true` (solo se puede fijar
+al crearla) y la opacidad se aplica solo a los fondos vía `--panel-alpha`
+en `:root` (`rgba(...)` en `--bg`/`--bg-elevated`/`--bg-hover`), así texto e
+imágenes siguen nítidos. Persistida en `ui-settings.json` (userData) vía
+`ui:getOpacity`/`ui:setOpacity`. Requiere compositor activo. No verificado
+visualmente en vivo al momento de escribir esto.
+
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho
    el 2026-08-07: en GNOME/Wayland vía XWayland, la ventana queda en x=0,
