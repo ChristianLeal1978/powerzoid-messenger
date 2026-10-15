@@ -635,10 +635,17 @@ menciones, qué `window.api.*` llamar).
   ambas en la práctica). `renderMessage()` en `renderer.js` renderiza
   `<audio controls src="...">` cuando `msg.audio` está poblado (ver
   `.msg-audio` en `styles.css`); el botón de descarga sigue apareciendo
-  igual (por `msg.hasMedia`), para quien prefiera guardar el archivo. Solo
-  Slack por ahora — WhatsApp sigue mostrando "📎 Adjunto" para audio, no se
-  tocó `whatsapp.js` (no fue parte del pedido; si hace falta ahí también,
-  el mismo patrón aplicaría sobre `getMediaPreview()`). No probado en vivo
+  igual (por `msg.hasMedia`), para quien prefiera guardar el archivo.
+  **WhatsApp también, desde 2026-10-15** (pedido del usuario: escuchar las
+  notas de voz que le mandan): `getMediaDataUri()` en `whatsapp.js` ahora
+  descarga inline los tipos `ptt` (nota de voz) y `audio` igual que
+  stickers/imágenes, y `serializeMessage()` los expone en el mismo campo
+  `audio` — el renderer no necesitó cambios para reproducirlos. Dos
+  detalles: el mimetype de las notas de voz llega como `audio/ogg;
+  codecs=opus`, se recorta al tipo base porque el espacio/parámetro rompe
+  el data URI en `<audio>`; y audios de más de 5 MB
+  (`AUDIO_INLINE_MAX_BYTES`, según `msg._data.size`) no se bajan inline,
+  quedan solo con el botón de descarga. No probado en vivo
   (mismo motivo que el resto de los cambios de esta fecha: sin sesión de
   Slack disponible en este entorno) — sí se confirmó `node -c` sobre
   `slack.js`/`renderer.js`.

@@ -142,15 +142,29 @@ function normalizeId(id) {
 }
 
 // Igual que con los stickers: bajamos el contenido inline solo para los
-// tipos livianos que queremos previsualizar (sticker, imagen). Video/audio/
-// documentos se quedan en el placeholder "📎 Adjunto" — descargarlos todos
+// tipos livianos que queremos previsualizar (sticker, imagen, audio/nota de
+// voz). Video/documentos se quedan en el placeholder "📎 Adjunto" — descargarlos todos
 // en cada fetchMessages() sería el mismo tipo de martillazo a Puppeteer que
 // causó los picos de CPU documentados en pushChatList().
+// 'ptt' = nota de voz grabada en WhatsApp; 'audio' = archivo de audio adjunto.
+const AUDIO_TYPES = new Set(['audio', 'ptt']);
+const INLINE_MEDIA_TYPES = new Set(['sticker', 'image', ...AUDIO_TYPES]);
+const AUDIO_INLINE_MAX_BYTES = 5 * 1024 * 1024;
+
 async function getMediaDataUri(msg) {
-  if (!msg.hasMedia || (msg.type !== 'sticker' && msg.type !== 'image')) return null;
+  if (!msg.hasMedia || !INLINE_MEDIA_TYPES.has(msg.type)) return null;
+  // Audios largos (archivos de música, no notas de voz) se quedan con el
+  // botón de descarga en vez de bajarse enteros en cada fetchMessages().
+  const size = msg._data && msg._data.size;
+  if (AUDIO_TYPES.has(msg.type) && size && size > AUDIO_INLINE_MAX_BYTES) return null;
   try {
     const media = await msg.downloadMedia();
-    return media ? `data:${media.mimetype};base64,${media.data}` : null;
+    if (!media) return null;
+    // Las notas de voz vienen como "audio/ogg; codecs=opus" — el espacio y
+    // el parámetro rompen el data URI en <audio>, así que nos quedamos con
+    // el tipo base.
+    const mimetype = String(media.mimetype || '').split(';')[0].trim();
+    return `data:${mimetype};base64,${media.data}`;
   } catch (err) {
     return null; // la UI cae al placeholder de "Adjunto"
   }
@@ -269,6 +283,7 @@ async function serializeMessage(msg) {
     type: msg.type,
     sticker: msg.type === 'sticker' ? mediaDataUri : null,
     image: msg.type === 'image' ? mediaDataUri : null,
+    audio: AUDIO_TYPES.has(msg.type) ? mediaDataUri : null,
     isVideo: msg.type === 'video',
     videoThumb: getVideoThumb(msg),
     contacts: getContacts(msg),

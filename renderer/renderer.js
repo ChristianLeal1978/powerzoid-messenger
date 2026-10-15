@@ -790,9 +790,9 @@ function renderMessage(msg) {
     : msg.isVideo
     ? `<div class="msg-video">${msg.videoThumb ? `<img src="${msg.videoThumb}" alt="video" />` : '<span class="video-label">🎬 Video</span>'}<span class="play">▶</span></div>${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
     : msg.audio
-    ? // Por ahora solo lo puebla slack.js (getFirstAudio()) — pedido del
-      // usuario, 2026-09-11: poder escuchar un audio de Slack sin tener que
-      // descargarlo antes. El botón de descarga sigue apareciendo igual
+    ? // Lo pueblan slack.js (getFirstAudio(), 2026-09-11) y whatsapp.js
+      // (notas de voz y audios, getMediaDataUri(), 2026-10-15): poder
+      // escuchar un audio sin tener que descargarlo antes. El botón de descarga sigue apareciendo igual
       // (ver más abajo, msg.hasMedia), por si quieren guardar el archivo.
       `<audio class="msg-audio" controls src="${msg.audio}"></audio>${msg.body ? `<span class="image-caption">${linkifyHtml(msg.body)}</span>` : ''}`
     : contactsHtml
@@ -1024,7 +1024,7 @@ function toggleReactionBar(wrap, msg) {
 // --- Responder a un mensaje (WhatsApp) ---
 function startReply(msg) {
   const label = msg.fromMe ? 'Tú' : msg.authorName || convName.textContent;
-  const text = msg.sticker ? 'Sticker' : msg.image ? msg.body || 'Imagen' : msg.body || (msg.hasMedia ? '📎 Adjunto' : '');
+  const text = msg.sticker ? 'Sticker' : msg.image ? msg.body || 'Imagen' : msg.audio ? '🎤 Audio' : msg.body || (msg.hasMedia ? '📎 Adjunto' : '');
   replyingTo = { id: msg.id, label, text };
   replyPreviewAuthor.textContent = label;
   replyPreviewText.textContent = text;
