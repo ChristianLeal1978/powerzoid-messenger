@@ -82,6 +82,24 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
+// Corrector ortográfico: Chromium elige el idioma según el locale del sistema
+// (LANG). Con LANG=en_US solo cargaba el diccionario en inglés y subrayaba
+// palabras correctas en español. Se fija explícitamente español + inglés, sin
+// depender del locale. En Linux Electron descarga los diccionarios la primera
+// vez, así que solo se piden los que existan en la lista disponible.
+const SPANISH_SPELLCHECK = ['es-419', 'es-ES', 'es']; // en orden de preferencia
+function configureSpellChecker() {
+  const ses = win.webContents.session;
+  const available = new Set(ses.availableSpellCheckerLanguages);
+  const spanish = SPANISH_SPELLCHECK.find((l) => available.has(l));
+  const langs = [spanish, available.has('en-US') && 'en-US'].filter(Boolean);
+  if (!langs.length) {
+    console.error('[main] ningún idioma del corrector disponible, se deja el valor por defecto.');
+    return;
+  }
+  ses.setSpellCheckerLanguages(langs);
+}
+
 function toggleVisibility() {
   if (!win || win.isDestroyed()) return;
   if (win.isVisible()) {
@@ -356,6 +374,7 @@ process.on('unhandledRejection', (err) => {
 
 app.whenReady().then(() => {
   createWindow();
+  configureSpellChecker();
   whatsapp.init(send);
   slack.init(send);
 
