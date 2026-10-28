@@ -87,7 +87,9 @@ function createWindow() {
 // palabras correctas en español. Se fija explícitamente español + inglés, sin
 // depender del locale. En Linux Electron descarga los diccionarios la primera
 // vez, así que solo se piden los que existan en la lista disponible.
-const SPANISH_SPELLCHECK = ['es-419', 'es-ES', 'es']; // en orden de preferencia
+// es-419 figura como disponible pero Google no publica su .bdic (404), así que
+// el corrector quedaba solo en inglés: es-ES va primero, que sí se descarga.
+const SPANISH_SPELLCHECK = ['es-ES', 'es']; // en orden de preferencia
 function configureSpellChecker() {
   const ses = win.webContents.session;
   const available = new Set(ses.availableSpellCheckerLanguages);
