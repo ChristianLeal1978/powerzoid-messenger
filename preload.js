@@ -10,6 +10,7 @@ const wa = {
   onAck: (cb) => ipcRenderer.on('wa:ack', (_e, payload) => cb(payload)),
   onReactionUpdate: (cb) => ipcRenderer.on('wa:reactionUpdate', (_e, payload) => cb(payload)),
   getMessages: (chatId) => ipcRenderer.invoke('wa:getMessages', chatId),
+  markAllRead: () => ipcRenderer.invoke('wa:markAllRead'),
   sendMessage: (chatId, text, mentions, quotedMessageId) =>
     ipcRenderer.invoke('wa:sendMessage', { chatId, text, mentions, quotedMessageId }),
   sendImage: (chatId, base64, mimetype, filename, caption, quotedMessageId) =>

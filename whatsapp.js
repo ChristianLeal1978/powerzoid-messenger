@@ -554,6 +554,32 @@ async function getMessages(chatId) {
   }
 }
 
+// "Marcar todos los mensajes como leídos" (menú ☰). Mismo chat.sendSeen()
+// que ya usa getMessages() al abrir un chat, pero sobre todos los chats no
+// archivados con no-leídos (no solo los 60 que muestra la lista). De a uno,
+// en secuencia: cada sendSeen() es un round-trip a Puppeteer y no vale la
+// pena dispararlos todos en paralelo contra la página.
+async function markAllRead() {
+  try {
+    const chats = await client.getChats();
+    const unread = chats.filter((c) => !c.archived && c.unreadCount > 0);
+    let marked = 0;
+    for (const chat of unread) {
+      try {
+        await chat.sendSeen();
+        marked += 1;
+      } catch (err) {
+        console.error(`[wa] sendSeen() falló para ${chat.id._serialized}:`, err.message || err);
+      }
+    }
+    pushChatList();
+    return { ok: true, marked, total: unread.length };
+  } catch (err) {
+    console.error('[wa] markAllRead() falló:', err.message || err);
+    return { ok: false, error: err.message || String(err) };
+  }
+}
+
 async function sendMessage({ chatId, text, mentions, quotedMessageId }) {
   try {
     const options = {};
@@ -655,6 +681,7 @@ module.exports = {
   init,
   regenerateQr,
   getMessages,
+  markAllRead,
   sendMessage,
   sendImage,
   reactToMessage,

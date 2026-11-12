@@ -371,6 +371,26 @@ document.getElementById('menu-slack-creds').addEventListener('click', () => {
   appMenu.classList.add('hidden');
   slackCredentialsAction();
 });
+// Solo WhatsApp tiene conteo real de no-leídos (Slack siempre manda
+// unreadCount: 0, ver CLAUDE.md). Se limpian los badges en la UI de una vez
+// y el proceso principal reenvía la lista real al terminar (pushChatList()).
+const markAllReadBtn = document.getElementById('menu-mark-all-read');
+markAllReadBtn.addEventListener('click', async () => {
+  appMenu.classList.add('hidden');
+  const waChats = providerData.wa.chats;
+  markAllReadBtn.disabled = true;
+  try {
+    const res = await window.api.wa.markAllRead();
+    if (res && res.ok) {
+      waChats.forEach((c) => { c.unreadCount = 0; });
+      if (activeProvider === 'wa') renderChatList();
+    } else {
+      console.error('[ui] markAllRead falló:', res && res.error);
+    }
+  } finally {
+    markAllReadBtn.disabled = false;
+  }
+});
 opacitySlider.addEventListener('input', () => {
   const pct = Number(opacitySlider.value);
   applyOpacity(pct);

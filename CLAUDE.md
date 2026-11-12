@@ -740,6 +740,16 @@ imágenes siguen nítidos. Persistida en `ui-settings.json` (userData) vía
 `ui:getOpacity`/`ui:setOpacity`. Requiere compositor activo. No verificado
 visualmente en vivo al momento de escribir esto.
 
+## Marcar todos como leídos (agregado 2026-11-12)
+
+Opción del menú ☰, pedida por el usuario para no abrir chat por chat.
+`markAllRead()` en `whatsapp.js` (IPC `wa:markAllRead`) llama
+`chat.sendSeen()` — lo mismo que ya hace `getMessages()` al abrir un chat —
+en secuencia sobre todos los chats no archivados con `unreadCount > 0` (no
+solo los 60 visibles), y luego `pushChatList()`. El renderer pone los badges
+en 0 apenas responde. Solo WhatsApp: Slack no tiene conteo de no-leídos
+(siempre `unreadCount: 0`). No probado en vivo al momento de escribir esto.
+
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho
    el 2026-08-07: en GNOME/Wayland vía XWayland, la ventana queda en x=0,

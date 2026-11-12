@@ -330,6 +330,7 @@ ipcMain.handle('sl:getVideo', async (_e, payload) => loadVideoForPlayback(await 
 // --- IPC: WhatsApp ---
 ipcMain.handle('wa:regenerateQr', () => whatsapp.regenerateQr());
 ipcMain.handle('wa:getMessages', (_e, chatId) => whatsapp.getMessages(chatId));
+ipcMain.handle('wa:markAllRead', () => whatsapp.markAllRead());
 ipcMain.handle('wa:sendMessage', (_e, payload) => whatsapp.sendMessage(payload));
 ipcMain.handle('wa:sendImage', (_e, payload) => whatsapp.sendImage(payload));
 ipcMain.handle('wa:reactToMessage', (_e, payload) => whatsapp.reactToMessage(payload));
