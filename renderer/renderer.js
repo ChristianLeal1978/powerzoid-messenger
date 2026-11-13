@@ -361,6 +361,7 @@ menuBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   appMenu.classList.toggle('hidden');
   opacityPanel.classList.add('hidden');
+  servicesPanel.classList.add('hidden');
 });
 appMenu.addEventListener('click', (e) => e.stopPropagation());
 document.addEventListener('click', () => appMenu.classList.add('hidden'));
@@ -397,6 +398,61 @@ opacitySlider.addEventListener('input', () => {
   window.api.ui.setOpacity(pct);
 });
 window.api.ui.getOpacity().then((pct) => applyOpacity(pct));
+
+// --- Servicios: modo solo WhatsApp / solo Slack ---
+// Se puede apagar uno de los dos proveedores (nunca ambos): su pestaña
+// desaparece, sus opciones del menú también, y main.js detiene el cliente
+// (Puppeteer en WhatsApp, el socket en Slack). La sesión de WhatsApp y los
+// tokens de Slack quedan guardados, así que volver a encenderlo reconecta solo.
+const servicesPanel = document.getElementById('services-panel');
+const serviceOptions = servicesPanel.querySelectorAll('.service-option');
+const slackCredsBtn = document.getElementById('menu-slack-creds');
+let disabledProvider = null;
+
+function resetProviderData(provider) {
+  Object.assign(providerData[provider], {
+    chats: [], status: undefined, railState: null, everReady: false, hasUnseenActivity: false,
+  });
+}
+
+function applyDisabledProvider(provider) {
+  disabledProvider = provider;
+  tabButtons.forEach((btn) => btn.classList.toggle('hidden', btn.dataset.provider === provider));
+  markAllReadBtn.classList.toggle('hidden', provider === 'wa');
+  slackCredsBtn.classList.toggle('hidden', provider === 'sl');
+  serviceOptions.forEach((opt) => opt.classList.toggle('active', (opt.dataset.disabled || null) === provider));
+  if (provider === activeProvider) switchProvider(provider === 'wa' ? 'sl' : 'wa');
+  updateTabDots();
+}
+
+document.getElementById('menu-services').addEventListener('click', () => {
+  servicesPanel.classList.toggle('hidden');
+});
+serviceOptions.forEach((opt) => {
+  opt.addEventListener('click', async () => {
+    const next = opt.dataset.disabled || null;
+    if (next === disabledProvider) return;
+    const prev = disabledProvider;
+    serviceOptions.forEach((o) => { o.disabled = true; });
+    try {
+      const res = await window.api.ui.setDisabledProvider(next);
+      if (!res || !res.ok) {
+        console.error('[ui] no se pudo cambiar el servicio apagado');
+        return;
+      }
+      // El que se apaga y el que se vuelve a encender arrancan de cero: el
+      // estado real llega de nuevo por onStatus al reconectar.
+      if (prev) resetProviderData(prev);
+      if (next) resetProviderData(next);
+      applyDisabledProvider(next);
+      appMenu.classList.add('hidden');
+      renderActiveScreen();
+    } finally {
+      serviceOptions.forEach((o) => { o.disabled = false; });
+    }
+  });
+});
+window.api.ui.getDisabledProvider().then((provider) => applyDisabledProvider(provider));
 
 // --- Lista de chats ---
 function handleChats(provider, list) {

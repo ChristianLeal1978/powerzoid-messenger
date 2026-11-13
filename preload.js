@@ -51,6 +51,8 @@ const ui = {
   openExternal: (url) => ipcRenderer.invoke('ui:openExternal', url),
   getOpacity: () => ipcRenderer.invoke('ui:getOpacity'),
   setOpacity: (pct) => ipcRenderer.invoke('ui:setOpacity', pct),
+  getDisabledProvider: () => ipcRenderer.invoke('ui:getDisabledProvider'),
+  setDisabledProvider: (provider) => ipcRenderer.invoke('ui:setDisabledProvider', provider),
   selectAttachment: () => ipcRenderer.invoke('ui:selectAttachment'),
 };
 

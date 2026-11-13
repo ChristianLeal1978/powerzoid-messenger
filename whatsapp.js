@@ -304,6 +304,9 @@ let pushChatListQueued = false;
 // memoria/CPU. Con este mutex, una ráfaga colapsa en como mucho una llamada
 // en curso más una de cola (no se pierde el refresco, pero no se duplica).
 async function pushChatList() {
+  // WhatsApp apagado desde el menú ☰ (ver stop()): un reintento con
+  // setTimeout agendado antes de apagarlo no debe tocar un cliente que ya no existe.
+  if (!client) return;
   if (pushChatListInFlight) {
     pushChatListQueued = true;
     return;
@@ -672,13 +675,41 @@ async function getGroupParticipants(chatId) {
   }
 }
 
+// init() solo guarda el canal hacia el renderer; main.js decide si arranca
+// el cliente (start()) según si WhatsApp está apagado desde el menú ☰.
 function init(sendFn) {
   send = sendFn;
+}
+
+function start() {
+  if (client) return { ok: true };
+  chatListRetries = 0;
+  emptyListRetries = 0;
   createClient();
+  return { ok: true };
+}
+
+// Apaga WhatsApp (menú ☰, modo "solo Slack"): cierra Puppeteer con
+// client.destroy() — cierre normal, igual que regenerateQr(), para no dejar
+// un Chrome colgado sosteniendo el SingletonLock del perfil (ver CLAUDE.md).
+// La sesión guardada en wwebjs_auth no se toca: al volver a encenderlo
+// reconecta sin pedir QR.
+async function stop() {
+  const old = client;
+  client = null;
+  if (!old) return { ok: true };
+  try {
+    await old.destroy();
+  } catch (err) {
+    console.error('[wa] destroy() falló al apagar WhatsApp:', err.message || err);
+  }
+  return { ok: true };
 }
 
 module.exports = {
   init,
+  start,
+  stop,
   regenerateQr,
   getMessages,
   markAllRead,

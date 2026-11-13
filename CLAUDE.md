@@ -750,6 +750,37 @@ solo los 60 visibles), y luego `pushChatList()`. El renderer pone los badges
 en 0 apenas responde. Solo WhatsApp: Slack no tiene conteo de no-leídos
 (siempre `unreadCount: 0`). No probado en vivo al momento de escribir esto.
 
+## Modo solo WhatsApp / solo Slack (agregado 2026-11-13)
+
+Opción **Servicios** del menú ☰ con tres opciones: "WhatsApp y Slack",
+"Solo WhatsApp", "Solo Slack". Se puede apagar uno de los dos, nunca ambos
+(no hay opción para eso, y `main.js` trata cualquier valor que no sea
+`'wa'`/`'sl'` como "ambos encendidos").
+
+- Persistido como `disabledProvider` en `ui-settings.json` (el mismo archivo
+  de la opacidad; `writeUiSettings()` mezcla con lo ya guardado para que
+  guardar una cosa no borre la otra).
+- Al arrancar, `main.js` no inicia el proveedor apagado: `whatsapp.init()` ya
+  no crea el cliente sola; lo hace `whatsapp.start()`, que se salta si
+  WhatsApp está apagado (no se levanta Puppeteer). Slack no conecta con los
+  tokens guardados si está apagado.
+- Se cambia en caliente, sin reiniciar (`ui:setDisabledProvider`): apagar
+  WhatsApp llama a `whatsapp.stop()` (`client.destroy()`, cierre normal, para
+  no dejar Chrome sosteniendo el `SingletonLock`); apagar Slack llama a
+  `slack.disconnect()`, que suelta el socket pero NO borra las credenciales
+  (eso lo hace solo el handler `sl:disconnect`). La sesión de WhatsApp
+  (`wwebjs_auth`) y los tokens de Slack quedan, así que volver a encenderlo
+  reconecta sin QR ni tokens.
+- En el renderer (`applyDisabledProvider()`): se oculta la pestaña del
+  apagado, y también "Marcar todos como leídos" (si se apaga WhatsApp) o
+  "Credenciales Slack" (si se apaga Slack); si la pestaña activa era la
+  apagada, se cambia a la otra.
+- `slack.disconnect()` ahora también resetea `lastMessageCacheLoaded` (antes
+  quedaba sin tocar, ver la entrada de canales anclados): sin eso, al volver
+  a encender Slack en el mismo proceso no se recargaba el caché del disco.
+- No probado en vivo: la app real del usuario tenía el perfil de Puppeteer
+  en uso. Sí se confirmó `node -c` sobre todos los archivos tocados.
+
 ## Prioridades, en orden
 1. ~~Confirmar que la ventana se posiciona bien en la sesión real~~ — hecho
    el 2026-08-07: en GNOME/Wayland vía XWayland, la ventana queda en x=0,

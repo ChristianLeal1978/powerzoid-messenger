@@ -1153,6 +1153,10 @@ function disconnect() {
   // seguirían en el archivo, pero manuallyOpenedChannels quedaría vacío
   // para siempre en esta sesión del proceso.
   pinnedChannelsLoaded = false;
+  // Mismo motivo que pinnedChannelsLoaded: apagar Slack desde el menú ☰ y
+  // volver a encenderlo reconecta en el mismo proceso, y sin esto el caché
+  // persistido no se recargaría (el Map quedó vacío arriba).
+  lastMessageCacheLoaded = false;
   userDirectoryCache = null;
   userDirectoryFetchedAt = 0;
   send('sl:status', 'not-configured');

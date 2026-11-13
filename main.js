@@ -35,24 +35,67 @@ const DEFAULT_OPACITY = 90;
 function uiSettingsPath() {
   return path.join(app.getPath('userData'), 'ui-settings.json');
 }
-function loadOpacity() {
+function readUiSettings() {
   try {
-    const v = Number(JSON.parse(fs.readFileSync(uiSettingsPath(), 'utf8')).opacity);
-    return Number.isFinite(v) ? Math.min(100, Math.max(20, Math.round(v))) : DEFAULT_OPACITY;
+    return JSON.parse(fs.readFileSync(uiSettingsPath(), 'utf8')) || {};
   } catch (err) {
-    return DEFAULT_OPACITY;
+    return {};
   }
+}
+// Mezcla con lo ya guardado: ui-settings.json guarda varias cosas
+// (opacidad, proveedor apagado) y escribir una no debe borrar la otra.
+function writeUiSettings(patch) {
+  try {
+    fs.writeFileSync(uiSettingsPath(), JSON.stringify({ ...readUiSettings(), ...patch }));
+    return true;
+  } catch (err) {
+    console.error('[main] no se pudieron guardar los ajustes de la interfaz:', err.message || err);
+    return false;
+  }
+}
+function loadOpacity() {
+  const v = Number(readUiSettings().opacity);
+  return Number.isFinite(v) ? Math.min(100, Math.max(20, Math.round(v))) : DEFAULT_OPACITY;
 }
 ipcMain.handle('ui:getOpacity', () => loadOpacity());
 ipcMain.handle('ui:setOpacity', (_e, pct) => {
   const v = Math.min(100, Math.max(20, Math.round(Number(pct) || DEFAULT_OPACITY)));
-  try {
-    fs.writeFileSync(uiSettingsPath(), JSON.stringify({ opacity: v }));
-  } catch (err) {
-    console.error('[main] no se pudo guardar la opacidad:', err.message || err);
-    return { ok: false };
+  return { ok: writeUiSettings({ opacity: v }) };
+});
+
+// Proveedor apagado desde el menú ☰ ('wa' | 'sl' | null). Solo uno a la vez:
+// apagar los dos dejaría la app vacía, así que cualquier otro valor cuenta
+// como "ambos encendidos".
+function loadDisabledProvider() {
+  const v = readUiSettings().disabledProvider;
+  return v === 'wa' || v === 'sl' ? v : null;
+}
+
+function startSlackFromSavedCredentials() {
+  const creds = loadSlackCredentials();
+  if (creds && creds.userToken && creds.appToken) {
+    send('sl:status', 'connecting');
+    slack.connect(creds);
+  } else {
+    send('sl:status', 'not-configured');
   }
-  return { ok: true };
+}
+
+ipcMain.handle('ui:getDisabledProvider', () => loadDisabledProvider());
+ipcMain.handle('ui:setDisabledProvider', async (_e, provider) => {
+  const next = provider === 'wa' || provider === 'sl' ? provider : null;
+  const prev = loadDisabledProvider();
+  if (next === prev) return { ok: true, disabledProvider: prev };
+  if (!writeUiSettings({ disabledProvider: next })) return { ok: false, disabledProvider: prev };
+  // Encender lo que estaba apagado antes de apagar lo nuevo (pasar directo
+  // de "solo WhatsApp" a "solo Slack" hace las dos cosas).
+  if (prev === 'wa') whatsapp.start();
+  if (prev === 'sl') startSlackFromSavedCredentials();
+  // slack.disconnect() solo suelta el socket y los cachés en memoria; las
+  // credenciales guardadas quedan, para reconectar solo al volver a encender.
+  if (next === 'wa') await whatsapp.stop();
+  if (next === 'sl') slack.disconnect();
+  return { ok: true, disabledProvider: next };
 });
 
 function createWindow() {
@@ -380,6 +423,8 @@ app.whenReady().then(() => {
   configureSpellChecker();
   whatsapp.init(send);
   slack.init(send);
+  const disabledProvider = loadDisabledProvider();
+  if (disabledProvider !== 'wa') whatsapp.start();
 
   const registered = globalShortcut.register(TOGGLE_VISIBILITY_SHORTCUT, toggleVisibility);
   if (!registered) {
@@ -393,13 +438,7 @@ app.whenReady().then(() => {
   // reconexión con credenciales ya guardadas puede resolver en menos de un
   // segundo y perder la carrera contra did-finish-load.
   win.webContents.once('did-finish-load', () => {
-    const creds = loadSlackCredentials();
-    if (creds && creds.userToken && creds.appToken) {
-      send('sl:status', 'connecting');
-      slack.connect(creds);
-    } else {
-      send('sl:status', 'not-configured');
-    }
+    if (disabledProvider !== 'sl') startSlackFromSavedCredentials();
   });
 
   app.on('activate', () => {
